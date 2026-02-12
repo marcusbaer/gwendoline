@@ -1,7 +1,13 @@
 {
   "name": "gwendoline",
-  "version": "0.1.1",
-  "description": "",
+  "version": "0.1.2",
+  "description": "CLI based tool for interacting with language models directly from terminal",
+  "keywords": [
+    "cli",
+    "llm",
+    "ollama",
+    "chat"
+  ],
   "type": "module",
   "bin": {
     "gwen": "./build/index.js",
