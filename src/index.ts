@@ -161,7 +161,11 @@ async function runLLMRequest(
           process.stdout.write(chunk.message.content);
         }
         if (chunk?.message?.tool_calls) {
-          await executeToolsCalls(messages, chunk?.message?.tool_calls);
+          const toolsCallAnswer: string = await executeToolsCalls(
+            messages,
+            chunk?.message?.tool_calls,
+          );
+          return toolsCallAnswer;
         }
       }
 
@@ -169,7 +173,11 @@ async function runLLMRequest(
     } else {
       const { tool_calls } = response.message;
       if (tool_calls) {
-        await executeToolsCalls(messages, tool_calls);
+        const toolsCallAnswer: string = await executeToolsCalls(
+          messages,
+          tool_calls,
+        );
+        return toolsCallAnswer;
       }
 
       if (returnChat) {
@@ -202,7 +210,9 @@ async function runLLMRequest(
           typeof tool.function.arguments === "string"
             ? JSON.parse(tool.function.arguments)
             : tool.function.arguments;
+        // @ts-ignore
         if (availableTools[tool.function.name]) {
+          // @ts-ignore
           const output = availableTools[tool.function.name](args);
           // console.log("> Function output:", output, "\n");
 
@@ -217,29 +227,10 @@ async function runLLMRequest(
       }
 
       // run LLM again for final answer, based on tools output
-      console.log("\n================\n");
+      if (!isChatMode && isAllowedToStream) {
+        console.log("\n================\n");
+      }
       return await runLLMRequest(messages, isChatMode, true);
-
-      // if (messages.some((msg) => msg.role === "tool")) {
-      // const response = await ollama.chat({
-      //   model: customModelName || LLM_MODEL,
-      //   messages,
-      //   // @ts-ignore
-      //   stream: isAllowedToStream,
-      //   think: isAllowedToStream && isThinkingMode,
-      //   // logprobs: true,
-      //   // tools: [], // ignore tools here to reduce complexity
-      // });
-      // if (returnChat) {
-      //   messages.push({
-      //     role: "assistant",
-      //     content: response.message.content,
-      //   });
-      //   const messagesStr = JSON.stringify(messages);
-      //   return messagesStr.trim();
-      // }
-      // return response.message.content;
-      // }
     }
   } catch (e) {
     return `Error: ${e}`;
