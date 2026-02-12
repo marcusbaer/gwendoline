@@ -11,6 +11,8 @@ const LLM_MODEL_CLOUD = "gpt-oss:120b-cloud";
 const isCloudLLM = argv.includes("--cloud");
 const hasLLMSpecified = argv.includes("--model");
 const isChatMode = argv.includes("--chat");
+const isStreamMode: boolean = argv.includes("--stream");
+const isThinkingMode: boolean = argv.includes("--thinking");
 
 interface ChatMessage {
   role: string;
@@ -94,22 +96,41 @@ async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
         "User-Agent": "Gwendoline/0.0",
       },
     });
+    const isAllowedToStream = !isChatMode && isStreamMode;
     const response = await ollama.chat({
       model: customModelName || LLM_MODEL,
       messages,
+      // @ts-ignore
+      stream: isAllowedToStream,
+      think: isAllowedToStream && isThinkingMode,
     });
 
-    if (returnChat) {
-      messages.push({
-        role: "assistant",
-        content: response.message.content,
-      });
+    if (isAllowedToStream) {
+      for await (const chunk of response) {
+        if (isThinkingMode && chunk?.message?.thinking) {
+          process.stdout.write(chunk.message.thinking);
+        }
+        if (chunk?.message?.content) {
+          process.stdout.write(chunk.message.content);
+        }
+      }
 
-      const messagesStr = JSON.stringify(messages);
-      return messagesStr.trim();
+      return "";
+    } else {
+      if (returnChat) {
+        messages.push({
+          role: "assistant",
+          // @ts-ignore
+          content: response.message.content,
+        });
+
+        const messagesStr = JSON.stringify(messages);
+        return messagesStr.trim();
+      }
+
+      // @ts-ignore
+      return response.message.content;
     }
-
-    return response.message.content;
   } catch (e) {
     return `Error: ${e}`;
   }

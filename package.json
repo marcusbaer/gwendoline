@@ -1,6 +1,6 @@
 {
   "name": "gwendoline",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "CLI based tool for interacting with language models directly from terminal",
   "keywords": [
     "cli",
