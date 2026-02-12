@@ -36,6 +36,7 @@
   },
   "homepage": "https://github.com/marcusbaer/gwendoline#readme",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "ollama": "^0.6.3"
   },
   "devDependencies": {

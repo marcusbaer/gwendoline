@@ -5,11 +5,14 @@ import readline from "node:readline";
 
 import { Ollama } from "ollama";
 
+import MCPClient from "./mcp.js";
+
 const LLM_MODEL_LOCAL = "qwen3:4b";
 const LLM_MODEL_CLOUD = "gpt-oss:120b-cloud";
 
 const isCloudLLM = argv.includes("--cloud");
 const hasLLMSpecified = argv.includes("--model");
+const useMcp = argv.includes("--mcp");
 const isChatMode = argv.includes("--chat");
 const isStreamMode: boolean = argv.includes("--stream");
 const isThinkingMode: boolean = argv.includes("--thinking");
@@ -32,6 +35,34 @@ if (hasLLMSpecified) {
 
 async function main() {
   let input = "";
+
+  if (useMcp) {
+    const ollama = new Ollama({
+      // host: "http://127.0.0.1:11434",
+      headers: {
+        //   Authorization: "Bearer <api key>",
+        //   "X-Custom-Header": "custom-value",
+        "User-Agent": "Gwendoline/0.0",
+      },
+    });
+    const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
+    const mcpClient = new MCPClient(ollama, customModelName || LLM_MODEL);
+    try {
+      // await mcpClient.connectScriptToServer(
+      //   "/Users/marbaer/Projekte/poc-mcp-server-sak/build/index.js",
+      // );
+      // const response = await mcpClient.processQuery("Why is the sky blue?");
+      // console.log(response);
+      // await mcpClient.chatLoop();
+    } catch (e) {
+      console.error("Error:", e);
+      await mcpClient.cleanup();
+      process.exit(1);
+    } finally {
+      await mcpClient.cleanup();
+      process.exit(0);
+    }
+  }
 
   process.stdin.setEncoding("utf8");
 

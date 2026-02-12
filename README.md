@@ -32,6 +32,7 @@ echo "Why is the sky blue?" | gwen
 
 cat prompt.md | gwen
 cat prompt.md | gwen --cloud
+cat prompt.md | gwen --mcp
 cat prompt.md | gwen --model gpt-oss:120b-cloud
 cat prompt.md | gwen --model gpt-oss:120b-cloud > output.md
 cat prompt.md | gwen --stream
