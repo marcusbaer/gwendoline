@@ -8,6 +8,8 @@ const LLM_MODEL_CLOUD = "gpt-oss:120b-cloud";
 const isCloudLLM = argv.includes("--cloud");
 const hasLLMSpecified = argv.includes("--model");
 const isChatMode = argv.includes("--chat");
+const isStreamMode = argv.includes("--stream");
+const isThinkingMode = argv.includes("--thinking");
 let customModelName = "";
 if (hasLLMSpecified) {
     argv.forEach((val, index) => {
@@ -71,9 +73,13 @@ async function runLLMRequest(messages, returnChat = false) {
                 "User-Agent": "Gwendoline/0.0",
             },
         });
+        const isAllowedToStream = !isChatMode && isStreamMode;
         const response = await ollama.chat({
             model: customModelName || LLM_MODEL,
             messages,
+            // @ts-ignore
+            stream: isAllowedToStream,
+            think: isAllowedToStream && isThinkingMode,
             // logprobs: true,
             tools: [
                 {
@@ -106,8 +112,34 @@ async function runLLMRequest(messages, returnChat = false) {
                 },
             ],
         });
-        const { tool_calls } = response.message;
-        if (tool_calls) {
+        if (isAllowedToStream) {
+            for await (const chunk of response) {
+                if (isThinkingMode && chunk?.message?.thinking) {
+                    process.stdout.write(chunk.message.thinking);
+                }
+                if (chunk?.message?.content) {
+                    process.stdout.write(chunk.message.content);
+                }
+            }
+            return "";
+        }
+        else {
+            const { tool_calls } = response.message;
+            if (tool_calls) {
+                executeToolsCalls(messages, tool_calls);
+            }
+            if (returnChat) {
+                messages.push({
+                    role: "assistant",
+                    content: response.message.content,
+                });
+                const messagesStr = JSON.stringify(messages);
+                return messagesStr.trim();
+            }
+            // @ts-ignore
+            return response.message.content;
+        }
+        async function executeToolsCalls(messages, tool_calls) {
             // console.log(JSON.stringify(tool_calls, null, 2));
             for (const tool of tool_calls) {
                 // console.log(
@@ -151,15 +183,6 @@ async function runLLMRequest(messages, returnChat = false) {
                 return response.message.content;
             }
         }
-        if (returnChat) {
-            messages.push({
-                role: "assistant",
-                content: response.message.content,
-            });
-            const messagesStr = JSON.stringify(messages);
-            return messagesStr.trim();
-        }
-        return response.message.content;
     }
     catch (e) {
         return `Error: ${e}`;
