@@ -10,6 +10,13 @@ const LLM_MODEL_CLOUD = "gpt-oss:120b-cloud";
 
 const isCloudLLM = argv.includes("--cloud");
 const hasLLMSpecified = argv.includes("--model");
+const isChatMode = argv.includes("--chat");
+
+interface ChatMessage {
+  role: string;
+  content: string;
+}
+
 let customModelName = "";
 
 if (hasLLMSpecified) {
@@ -31,8 +38,21 @@ async function main() {
   });
 
   process.stdin.on("end", async () => {
-    const content = await runLLMRequest(input.trim());
-    process.stdout.write(content);
+    if (isChatMode) {
+      try {
+        const inputMessages = JSON.parse(input.trim() || "[]");
+        const content = await runLLMRequest(inputMessages, isChatMode);
+        process.stdout.write(content);
+      } catch (error) {
+        throw Error("Could not parse input of chat messages", error || "");
+      }
+    } else {
+      const content = await runLLMRequest(
+        [{ role: "user", content: input.trim() }],
+        isChatMode,
+      );
+      process.stdout.write(content);
+    }
   });
 
   if (process.stdin.isTTY) {
@@ -47,7 +67,10 @@ async function main() {
         process.exit(1);
       }
 
-      const content = await runLLMRequest(prompt);
+      const content = await runLLMRequest(
+        [{ role: "user", content: prompt }],
+        false, // chat mode not supported with user input interface
+      );
       process.stdout.write(content);
       process.exit(1);
     });
@@ -59,7 +82,7 @@ main().catch((error) => {
   process.exit(1);
 });
 
-async function runLLMRequest(prompt = "") {
+async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
   const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
 
   try {
@@ -73,8 +96,18 @@ async function runLLMRequest(prompt = "") {
     });
     const response = await ollama.chat({
       model: customModelName || LLM_MODEL,
-      messages: [{ role: "user", content: prompt }],
+      messages,
     });
+
+    if (returnChat) {
+      messages.push({
+        role: "assistant",
+        content: response.message.content,
+      });
+
+      const messagesStr = JSON.stringify(messages);
+      return messagesStr.trim();
+    }
 
     return response.message.content;
   } catch (e) {

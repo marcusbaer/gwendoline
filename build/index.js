@@ -6,6 +6,7 @@ const LLM_MODEL_LOCAL = "qwen3:4b";
 const LLM_MODEL_CLOUD = "gpt-oss:120b-cloud";
 const isCloudLLM = argv.includes("--cloud");
 const hasLLMSpecified = argv.includes("--model");
+const isChatMode = argv.includes("--chat");
 let customModelName = "";
 if (hasLLMSpecified) {
     argv.forEach((val, index) => {
@@ -22,8 +23,20 @@ async function main() {
         input += chunk;
     });
     process.stdin.on("end", async () => {
-        const content = await runLLMRequest(input.trim());
-        process.stdout.write(content);
+        if (isChatMode) {
+            try {
+                const inputMessages = JSON.parse(input.trim() || "[]");
+                const content = await runLLMRequest(inputMessages, isChatMode);
+                process.stdout.write(content);
+            }
+            catch (error) {
+                throw Error("Could not parse input of chat messages", error || "");
+            }
+        }
+        else {
+            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode);
+            process.stdout.write(content);
+        }
     });
     if (process.stdin.isTTY) {
         const rl = readline.createInterface({
@@ -36,7 +49,7 @@ async function main() {
                 process.stdout.write("Bye!");
                 process.exit(1);
             }
-            const content = await runLLMRequest(prompt);
+            const content = await runLLMRequest([{ role: "user", content: prompt }], false);
             process.stdout.write(content);
             process.exit(1);
         });
@@ -46,7 +59,7 @@ main().catch((error) => {
     console.error("Fatal error in main():", error);
     process.exit(1);
 });
-async function runLLMRequest(prompt = "") {
+async function runLLMRequest(messages, returnChat = false) {
     const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
     try {
         const ollama = new Ollama({
@@ -59,8 +72,16 @@ async function runLLMRequest(prompt = "") {
         });
         const response = await ollama.chat({
             model: customModelName || LLM_MODEL,
-            messages: [{ role: "user", content: prompt }],
+            messages,
         });
+        if (returnChat) {
+            messages.push({
+                role: "assistant",
+                content: response.message.content,
+            });
+            const messagesStr = JSON.stringify(messages);
+            return messagesStr.trim();
+        }
         return response.message.content;
     }
     catch (e) {

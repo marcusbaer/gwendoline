@@ -4,5 +4,10 @@
 
 node_modules/
 
+*.json
+*.jsonl
 *.md
+
 !README.md
+package.json
+package-lock.json
