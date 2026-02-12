@@ -150,16 +150,36 @@ async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
           const output = availableTools[tool.function.name](args);
           // console.log("> Function output:", output, "\n");
 
-          if (isChatMode) {
-            messages.push({
-              role: "tool",
-              content: output.toString(),
-              tool_name: tool.function.name,
-            });
-          }
+          messages.push({
+            role: "tool",
+            content: output.toString(),
+            tool_name: tool.function.name,
+          });
         } else if (!isChatMode) {
           console.warn("Function", tool.function.name, "not found");
         }
+      }
+
+      if (messages.some((msg) => msg.role === "tool")) {
+        // run LLM again for final answer, based on tools output
+        const response = await ollama.chat({
+          model: customModelName || LLM_MODEL,
+          messages,
+          // logprobs: true,
+          // tools: [], // ignore tools here to reduce complexity
+        });
+
+        if (returnChat) {
+          messages.push({
+            role: "assistant",
+            content: response.message.content,
+          });
+
+          const messagesStr = JSON.stringify(messages);
+          return messagesStr.trim();
+        }
+
+        return response.message.content;
       }
     }
 

@@ -2,7 +2,7 @@ export function getConditions(args: { city: string }): string {
   const validCities = ["London", "Paris", "New York", "Tokyo", "Sydney"];
 
   if (!validCities.includes(args.city)) {
-    return "Unknown city";
+    return `Unknown city ${args.city}`;
   }
 
   const conditions = ["sunny", "cloudy", "rainy", "snowy"];
