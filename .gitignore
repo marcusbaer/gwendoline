@@ -1,0 +1,5 @@
+.continue/
+.vscode/
+.github/
+
+node_modules/

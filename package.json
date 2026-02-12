@@ -1,0 +1,33 @@
+{
+  "name": "gwendoline",
+  "version": "0.0.1",
+  "description": "",
+  "type": "module",
+  "bin": {
+    "gwen": "./build/index.js",
+    "gwendoline": "./build/index.js"
+  },
+  "scripts": {
+    "preinstall": "echo \"Make sure to install Ollama first!\"",
+    "build": "tsc && chmod 755 build/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "files": [
+    "build"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcusbaer/gwendoline.git"
+  },
+  "author": "Marcus Baer",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/marcusbaer/gwendoline/issues"
+  },
+  "homepage": "https://github.com/marcusbaer/gwendoline#readme",
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}
