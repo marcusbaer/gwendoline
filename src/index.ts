@@ -4,6 +4,7 @@ import { argv } from "node:process";
 import readline from "node:readline";
 
 import { Ollama } from "ollama";
+import availableTools from "./tools.js";
 
 const LLM_MODEL_LOCAL = "qwen3:4b";
 const LLM_MODEL_CLOUD = "gpt-oss:120b-cloud";
@@ -15,6 +16,7 @@ const isChatMode = argv.includes("--chat");
 interface ChatMessage {
   role: string;
   content: string;
+  tool_name?: string;
 }
 
 let customModelName = "";
@@ -97,7 +99,69 @@ async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
     const response = await ollama.chat({
       model: customModelName || LLM_MODEL,
       messages,
+      // logprobs: true,
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "getConditions",
+            description: "Get the weather conditions for a city",
+            parameters: {
+              type: "object",
+              required: ["city"],
+              properties: {
+                city: { type: "string", description: "The name of the city" },
+              },
+            },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "getTemperature",
+            description: "Get the temperature for a city in Celsius",
+            parameters: {
+              type: "object",
+              required: ["city"],
+              properties: {
+                city: { type: "string", description: "The name of the city" },
+              },
+            },
+          },
+        },
+      ],
     });
+
+    const { tool_calls } = response.message;
+    if (tool_calls) {
+      // console.log(JSON.stringify(tool_calls, null, 2));
+      for (const tool of tool_calls) {
+        // console.log(
+        //   "\nCalling function:",
+        //   tool.function.name,
+        //   "with arguments:",
+        //   tool.function.arguments,
+        // );
+        const args =
+          typeof tool.function.arguments === "string"
+            ? JSON.parse(tool.function.arguments)
+            : tool.function.arguments;
+        if (availableTools[tool.function.name]) {
+          const output = availableTools[tool.function.name](args);
+          // console.log("> Function output:", output, "\n");
+
+          if (isChatMode) {
+            messages.push({
+              role: "tool",
+              content: output.toString(),
+              tool_name: tool.function.name,
+            });
+          }
+        } else if (!isChatMode) {
+          console.warn("Function", tool.function.name, "not found");
+        }
+      }
+    }
 
     if (returnChat) {
       messages.push({
