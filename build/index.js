@@ -120,6 +120,9 @@ async function runLLMRequest(messages, returnChat = false) {
                 if (chunk?.message?.content) {
                     process.stdout.write(chunk.message.content);
                 }
+                if (chunk?.message?.tool_calls) {
+                    executeToolsCalls(messages, chunk?.message?.tool_calls);
+                }
             }
             return "";
         }
@@ -169,6 +172,9 @@ async function runLLMRequest(messages, returnChat = false) {
                 const response = await ollama.chat({
                     model: customModelName || LLM_MODEL,
                     messages,
+                    // @ts-ignore
+                    stream: isAllowedToStream,
+                    think: isAllowedToStream && isThinkingMode,
                     // logprobs: true,
                     // tools: [], // ignore tools here to reduce complexity
                 });
