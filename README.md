@@ -1,7 +1,37 @@
 # Gwendoline
 
+Gwendoline is a CLI based tool for interacting with language models directly from your terminal, allowing you to send prompts and receive responses via standard input and output.
+
+It is using Ollama and some LLMs as default:
+
+- `qwen3:4b` for local usage
+- `gpt-oss:120b-cloud` for usage with a cloud model
+
+## Dependencies
+
+Gwendoline depends on [Ollama](https://ollama.com/) as a local runtime for language models. By default, it uses the `qwen3:4b` model for local processing via Ollama, and the `gpt-oss:120b-cloud` model for cloud-based requests. Both models are preconfigured and need to be installed with Ollama.
+
+Anyway, an **alternative model** can be specified as CLI parameter to override the defaults.
+
 ## Installation
 
 ```sh
 npm install -g gwendoline
+```
+
+## Usage
+
+Use `gwendoline` or `gwen` on CLI to run.
+
+Some examples of how to run it:
+
+```sh
+gwen
+
+echo "Why is the sky blue?" | gwen
+
+cat prompt.md | gwen
+cat prompt.md | gwen --cloud
+cat prompt.md | gwen --model "gpt-oss:120b-cloud"
+cat prompt.md | gwen --model "gpt-oss:120b-cloud" > output.md
 ```
