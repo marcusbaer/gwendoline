@@ -2,6 +2,7 @@
 import { argv } from "node:process";
 import readline from "node:readline";
 import { Ollama } from "ollama";
+import availableTools from "./tools.js";
 import MCPClient from "./mcp.js";
 const LLM_MODEL_LOCAL = "qwen3:4b";
 const LLM_MODEL_CLOUD = "gpt-oss:120b-cloud";
@@ -56,7 +57,7 @@ async function main() {
         if (isChatMode) {
             try {
                 const inputMessages = JSON.parse(input.trim() || "[]");
-                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient);
+                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient, false);
                 process.stdout.write(content);
             }
             catch (error) {
@@ -64,7 +65,7 @@ async function main() {
             }
         }
         else {
-            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient);
+            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient, false);
             process.stdout.write(content);
         }
     });
@@ -80,7 +81,7 @@ async function main() {
                 process.exit(1);
             }
             const content = await runLLMRequest([{ role: "user", content: prompt }], false, // chat mode not supported with user input interface
-            mcpClient);
+            mcpClient, false);
             process.stdout.write(content);
             process.exit(1);
         });
@@ -90,7 +91,7 @@ main().catch((error) => {
     console.error("Fatal error in main():", error);
     process.exit(1);
 });
-async function runLLMRequest(messages, returnChat = false, mcpClient = null) {
+async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTools = false) {
     const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
     try {
         const ollama = new Ollama({
@@ -108,8 +109,47 @@ async function runLLMRequest(messages, returnChat = false, mcpClient = null) {
             // @ts-ignore
             stream: isAllowedToStream,
             think: isAllowedToStream && isThinkingMode,
+            // logprobs: true,
             // @ts-ignore
-            tools: mcpClient ? mcpClient.tools || [] : [],
+            // tools: mcpClient ? mcpClient.tools || [] : [],
+            tools: ignoreTools
+                ? []
+                : [
+                    {
+                        type: "function",
+                        function: {
+                            name: "getConditions",
+                            description: "Get the weather conditions for a city",
+                            parameters: {
+                                type: "object",
+                                required: ["city"],
+                                properties: {
+                                    city: {
+                                        type: "string",
+                                        description: "The name of the city",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    {
+                        type: "function",
+                        function: {
+                            name: "getTemperature",
+                            description: "Get the temperature for a city in Celsius",
+                            parameters: {
+                                type: "object",
+                                required: ["city"],
+                                properties: {
+                                    city: {
+                                        type: "string",
+                                        description: "The name of the city",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
         });
         if (isAllowedToStream) {
             for await (const chunk of response) {
@@ -119,14 +159,22 @@ async function runLLMRequest(messages, returnChat = false, mcpClient = null) {
                 if (chunk?.message?.content) {
                     process.stdout.write(chunk.message.content);
                 }
+                if (chunk?.message?.tool_calls) {
+                    const toolsCallAnswer = await executeToolsCalls(messages, chunk?.message?.tool_calls);
+                    return toolsCallAnswer;
+                }
             }
             return "";
         }
         else {
+            const { tool_calls } = response.message;
+            if (tool_calls) {
+                const toolsCallAnswer = await executeToolsCalls(messages, tool_calls);
+                return toolsCallAnswer;
+            }
             if (returnChat) {
                 messages.push({
                     role: "assistant",
-                    // @ts-ignore
                     content: response.message.content,
                 });
                 const messagesStr = JSON.stringify(messages);
@@ -134,6 +182,39 @@ async function runLLMRequest(messages, returnChat = false, mcpClient = null) {
             }
             // @ts-ignore
             return response.message.content;
+        }
+        async function executeToolsCalls(messages, tool_calls) {
+            // console.log(JSON.stringify(tool_calls, null, 2));
+            for (const tool of tool_calls) {
+                // console.log(
+                //   "\nCalling function:",
+                //   tool.function.name,
+                //   "with arguments:",
+                //   tool.function.arguments,
+                // );
+                const args = typeof tool.function.arguments === "string"
+                    ? JSON.parse(tool.function.arguments)
+                    : tool.function.arguments;
+                // @ts-ignore
+                if (availableTools[tool.function.name]) {
+                    // @ts-ignore
+                    const output = availableTools[tool.function.name](args);
+                    // console.log("> Function output:", output, "\n");
+                    messages.push({
+                        role: "tool",
+                        content: output.toString(),
+                        tool_name: tool.function.name,
+                    });
+                }
+                else if (!isChatMode) {
+                    console.warn("Function", tool.function.name, "not found");
+                }
+            }
+            // run LLM again for final answer, based on tools output
+            if (!isChatMode && isAllowedToStream) {
+                console.log("\n================\n");
+            }
+            return await runLLMRequest(messages, isChatMode, mcpClient, true);
         }
     }
     catch (e) {

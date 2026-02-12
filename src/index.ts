@@ -4,7 +4,7 @@ import { argv } from "node:process";
 import readline from "node:readline";
 
 import { Ollama } from "ollama";
-
+import availableTools from "./tools.js";
 import MCPClient from "./mcp.js";
 
 const LLM_MODEL_LOCAL = "qwen3:4b";
@@ -20,6 +20,7 @@ const isThinkingMode: boolean = argv.includes("--thinking");
 interface ChatMessage {
   role: string;
   content: string;
+  tool_name?: string;
 }
 
 let customModelName = "";
@@ -76,6 +77,7 @@ async function main() {
           inputMessages,
           isChatMode,
           mcpClient,
+          false,
         );
         process.stdout.write(content);
       } catch (error) {
@@ -86,6 +88,7 @@ async function main() {
         [{ role: "user", content: input.trim() }],
         isChatMode,
         mcpClient,
+        false,
       );
       process.stdout.write(content);
     }
@@ -107,6 +110,7 @@ async function main() {
         [{ role: "user", content: prompt }],
         false, // chat mode not supported with user input interface
         mcpClient,
+        false,
       );
       process.stdout.write(content);
       process.exit(1);
@@ -122,7 +126,8 @@ main().catch((error) => {
 async function runLLMRequest(
   messages: ChatMessage[],
   returnChat = false,
-  mcpClient = null,
+  mcpClient: any,
+  ignoreTools = false,
 ) {
   const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
 
@@ -142,8 +147,47 @@ async function runLLMRequest(
       // @ts-ignore
       stream: isAllowedToStream,
       think: isAllowedToStream && isThinkingMode,
+      // logprobs: true,
       // @ts-ignore
-      tools: mcpClient ? mcpClient.tools || [] : [],
+      // tools: mcpClient ? mcpClient.tools || [] : [],
+      tools: ignoreTools
+        ? []
+        : [
+            {
+              type: "function",
+              function: {
+                name: "getConditions",
+                description: "Get the weather conditions for a city",
+                parameters: {
+                  type: "object",
+                  required: ["city"],
+                  properties: {
+                    city: {
+                      type: "string",
+                      description: "The name of the city",
+                    },
+                  },
+                },
+              },
+            },
+            {
+              type: "function",
+              function: {
+                name: "getTemperature",
+                description: "Get the temperature for a city in Celsius",
+                parameters: {
+                  type: "object",
+                  required: ["city"],
+                  properties: {
+                    city: {
+                      type: "string",
+                      description: "The name of the city",
+                    },
+                  },
+                },
+              },
+            },
+          ],
     });
 
     if (isAllowedToStream) {
@@ -154,14 +198,29 @@ async function runLLMRequest(
         if (chunk?.message?.content) {
           process.stdout.write(chunk.message.content);
         }
+        if (chunk?.message?.tool_calls) {
+          const toolsCallAnswer: string = await executeToolsCalls(
+            messages,
+            chunk?.message?.tool_calls,
+          );
+          return toolsCallAnswer;
+        }
       }
 
       return "";
     } else {
+      const { tool_calls } = response.message;
+      if (tool_calls) {
+        const toolsCallAnswer: string = await executeToolsCalls(
+          messages,
+          tool_calls,
+        );
+        return toolsCallAnswer;
+      }
+
       if (returnChat) {
         messages.push({
           role: "assistant",
-          // @ts-ignore
           content: response.message.content,
         });
 
@@ -171,6 +230,45 @@ async function runLLMRequest(
 
       // @ts-ignore
       return response.message.content;
+    }
+
+    async function executeToolsCalls(
+      messages: ChatMessage[],
+      tool_calls: any[],
+    ) {
+      // console.log(JSON.stringify(tool_calls, null, 2));
+      for (const tool of tool_calls) {
+        // console.log(
+        //   "\nCalling function:",
+        //   tool.function.name,
+        //   "with arguments:",
+        //   tool.function.arguments,
+        // );
+        const args =
+          typeof tool.function.arguments === "string"
+            ? JSON.parse(tool.function.arguments)
+            : tool.function.arguments;
+        // @ts-ignore
+        if (availableTools[tool.function.name]) {
+          // @ts-ignore
+          const output = availableTools[tool.function.name](args);
+          // console.log("> Function output:", output, "\n");
+
+          messages.push({
+            role: "tool",
+            content: output.toString(),
+            tool_name: tool.function.name,
+          });
+        } else if (!isChatMode) {
+          console.warn("Function", tool.function.name, "not found");
+        }
+      }
+
+      // run LLM again for final answer, based on tools output
+      if (!isChatMode && isAllowedToStream) {
+        console.log("\n================\n");
+      }
+      return await runLLMRequest(messages, isChatMode, mcpClient, true);
     }
   } catch (e) {
     return `Error: ${e}`;
