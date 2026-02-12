@@ -35,6 +35,7 @@ if (hasLLMSpecified) {
 
 async function main() {
   let input = "";
+  let mcpClient = null;
 
   if (useMcp) {
     const ollama = new Ollama({
@@ -46,21 +47,18 @@ async function main() {
       },
     });
     const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
-    const mcpClient = new MCPClient(ollama, customModelName || LLM_MODEL);
+    mcpClient = new MCPClient(ollama, customModelName || LLM_MODEL);
     try {
-      // await mcpClient.connectScriptToServer(
-      //   "/Users/marbaer/Projekte/poc-mcp-server-sak/build/index.js",
-      // );
-      // const response = await mcpClient.processQuery("Why is the sky blue?");
-      // console.log(response);
+      await mcpClient.readMcpJson();
+      // await mcpClient.processQuery("Why is the sky blue?");
       // await mcpClient.chatLoop();
     } catch (e) {
       console.error("Error:", e);
       await mcpClient.cleanup();
       process.exit(1);
-    } finally {
-      await mcpClient.cleanup();
-      process.exit(0);
+      // } finally {
+      //   await mcpClient.cleanup();
+      //   process.exit(0);
     }
   }
 
@@ -74,7 +72,11 @@ async function main() {
     if (isChatMode) {
       try {
         const inputMessages = JSON.parse(input.trim() || "[]");
-        const content = await runLLMRequest(inputMessages, isChatMode);
+        const content = await runLLMRequest(
+          inputMessages,
+          isChatMode,
+          mcpClient,
+        );
         process.stdout.write(content);
       } catch (error) {
         throw Error("Could not parse input of chat messages", error || "");
@@ -83,6 +85,7 @@ async function main() {
       const content = await runLLMRequest(
         [{ role: "user", content: input.trim() }],
         isChatMode,
+        mcpClient,
       );
       process.stdout.write(content);
     }
@@ -103,6 +106,7 @@ async function main() {
       const content = await runLLMRequest(
         [{ role: "user", content: prompt }],
         false, // chat mode not supported with user input interface
+        mcpClient,
       );
       process.stdout.write(content);
       process.exit(1);
@@ -115,7 +119,11 @@ main().catch((error) => {
   process.exit(1);
 });
 
-async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
+async function runLLMRequest(
+  messages: ChatMessage[],
+  returnChat = false,
+  mcpClient = null,
+) {
   const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
 
   try {
@@ -134,6 +142,8 @@ async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
       // @ts-ignore
       stream: isAllowedToStream,
       think: isAllowedToStream && isThinkingMode,
+      // @ts-ignore
+      tools: mcpClient ? mcpClient.tools || [] : [],
     });
 
     if (isAllowedToStream) {

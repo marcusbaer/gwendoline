@@ -32,10 +32,9 @@ class MCPClient {
     this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
     this.ollama = ollama;
     this.model = model;
-    this.readMcpJson();
   }
 
-  readMcpJson() {
+  async readMcpJson() {
     const filePath = path.join(__dirname, "../build/mcp.json");
     const fileContent = fs.readFileSync(filePath, "utf-8");
     const mcpJson = JSON.parse(fileContent);
@@ -45,38 +44,45 @@ class MCPClient {
         const def = servers[id];
         const { type } = def;
         if (type === "stdio") {
-          this.connectToServer(def.command, def.args || []);
+          await this.connectToServer(def.command, def.args || []);
         }
         // TODO: support of http/sse
       }
+      // here needed to load tools
+      this.listTools();
     }
   }
 
   async connectToServer(command: string, args: []) {
     try {
-      console.log(command, args);
       const transport = new StdioClientTransport({
         command,
         args,
       });
       await this.mcp.connect(transport);
-
-      // const toolsResult = await this.mcp.listTools();
-      // this.tools = toolsResult.tools.map((tool) => {
-      //   return {
-      //     name: tool.name,
-      //     description: tool.description,
-      //     input_schema: tool.inputSchema,
-      //   };
-      // });
-      // console.log(
-      //   "Connected to server with tools:",
-      //   this.tools.map(({ name }) => name),
-      // );
     } catch (e) {
       console.log("Failed to connect to MCP server: ", e);
       throw e;
     }
+  }
+
+  async listTools() {
+    const toolsResult = await this.mcp.listTools();
+    this.tools = toolsResult.tools.map((tool) => {
+      return {
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.inputSchema,
+      };
+    });
+    console.log(
+      "Connected to server with tools:",
+      this.tools.map(({ name }) => name),
+    );
+  }
+
+  getTools() {
+    return this.tools;
   }
 
   async cleanup() {
@@ -96,6 +102,7 @@ class MCPClient {
       messages,
       stream: false,
       think: false,
+      tools: this.tools,
     });
 
     // const response = await this.anthropic.messages.create({
