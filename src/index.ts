@@ -45,7 +45,7 @@ async function main() {
     if (isChatMode) {
       try {
         const inputMessages = JSON.parse(input.trim() || "[]");
-        const content = await runLLMRequest(inputMessages, isChatMode);
+        const content = await runLLMRequest(inputMessages, isChatMode, false);
         process.stdout.write(content);
       } catch (error) {
         throw Error("Could not parse input of chat messages", error || "");
@@ -54,6 +54,7 @@ async function main() {
       const content = await runLLMRequest(
         [{ role: "user", content: input.trim() }],
         isChatMode,
+        false,
       );
       process.stdout.write(content);
     }
@@ -74,6 +75,7 @@ async function main() {
       const content = await runLLMRequest(
         [{ role: "user", content: prompt }],
         false, // chat mode not supported with user input interface
+        false,
       );
       process.stdout.write(content);
       process.exit(1);
@@ -86,7 +88,11 @@ main().catch((error) => {
   process.exit(1);
 });
 
-async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
+async function runLLMRequest(
+  messages: ChatMessage[],
+  returnChat = false,
+  ignoreTools = false,
+) {
   const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
 
   try {
@@ -106,36 +112,44 @@ async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
       stream: isAllowedToStream,
       think: isAllowedToStream && isThinkingMode,
       // logprobs: true,
-      tools: [
-        {
-          type: "function",
-          function: {
-            name: "getConditions",
-            description: "Get the weather conditions for a city",
-            parameters: {
-              type: "object",
-              required: ["city"],
-              properties: {
-                city: { type: "string", description: "The name of the city" },
+      tools: ignoreTools
+        ? []
+        : [
+            {
+              type: "function",
+              function: {
+                name: "getConditions",
+                description: "Get the weather conditions for a city",
+                parameters: {
+                  type: "object",
+                  required: ["city"],
+                  properties: {
+                    city: {
+                      type: "string",
+                      description: "The name of the city",
+                    },
+                  },
+                },
               },
             },
-          },
-        },
-        {
-          type: "function",
-          function: {
-            name: "getTemperature",
-            description: "Get the temperature for a city in Celsius",
-            parameters: {
-              type: "object",
-              required: ["city"],
-              properties: {
-                city: { type: "string", description: "The name of the city" },
+            {
+              type: "function",
+              function: {
+                name: "getTemperature",
+                description: "Get the temperature for a city in Celsius",
+                parameters: {
+                  type: "object",
+                  required: ["city"],
+                  properties: {
+                    city: {
+                      type: "string",
+                      description: "The name of the city",
+                    },
+                  },
+                },
               },
             },
-          },
-        },
-      ],
+          ],
     });
 
     if (isAllowedToStream) {
@@ -147,7 +161,7 @@ async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
           process.stdout.write(chunk.message.content);
         }
         if (chunk?.message?.tool_calls) {
-          executeToolsCalls(messages, chunk?.message?.tool_calls);
+          await executeToolsCalls(messages, chunk?.message?.tool_calls);
         }
       }
 
@@ -155,7 +169,7 @@ async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
     } else {
       const { tool_calls } = response.message;
       if (tool_calls) {
-        executeToolsCalls(messages, tool_calls);
+        await executeToolsCalls(messages, tool_calls);
       }
 
       if (returnChat) {
@@ -202,31 +216,30 @@ async function runLLMRequest(messages: ChatMessage[], returnChat = false) {
         }
       }
 
-      if (messages.some((msg) => msg.role === "tool")) {
-        // run LLM again for final answer, based on tools output
-        const response = await ollama.chat({
-          model: customModelName || LLM_MODEL,
-          messages,
-          // @ts-ignore
-          stream: isAllowedToStream,
-          think: isAllowedToStream && isThinkingMode,
-          // logprobs: true,
+      // run LLM again for final answer, based on tools output
+      console.log("\n================\n");
+      return await runLLMRequest(messages, isChatMode, true);
 
-          // tools: [], // ignore tools here to reduce complexity
-        });
-
-        if (returnChat) {
-          messages.push({
-            role: "assistant",
-            content: response.message.content,
-          });
-
-          const messagesStr = JSON.stringify(messages);
-          return messagesStr.trim();
-        }
-
-        return response.message.content;
-      }
+      // if (messages.some((msg) => msg.role === "tool")) {
+      // const response = await ollama.chat({
+      //   model: customModelName || LLM_MODEL,
+      //   messages,
+      //   // @ts-ignore
+      //   stream: isAllowedToStream,
+      //   think: isAllowedToStream && isThinkingMode,
+      //   // logprobs: true,
+      //   // tools: [], // ignore tools here to reduce complexity
+      // });
+      // if (returnChat) {
+      //   messages.push({
+      //     role: "assistant",
+      //     content: response.message.content,
+      //   });
+      //   const messagesStr = JSON.stringify(messages);
+      //   return messagesStr.trim();
+      // }
+      // return response.message.content;
+      // }
     }
   } catch (e) {
     return `Error: ${e}`;
