@@ -118,12 +118,26 @@ async function runLLMRequest(
       },
     });
     const isAllowedToStream = !isChatMode && isStreamMode;
-    const mcpClientTools = mcpClient ? mcpClient.getTools() || [] : [];
+    const mcpTools = mcpClient ? mcpClient.getTools() || [] : [];
+    
+    // Convert MCP tools to Ollama format
+    const formattedMcpTools = mcpTools.map((tool: any) => ({
+      type: "function",
+      function: {
+        name: tool.name,
+        description: tool.description || "",
+        parameters: tool.input_schema || {
+          type: "object",
+          properties: {},
+        },
+      },
+    }));
+    
     console.log(
       "MCP CLIENT TOOLS",
       ignoreTools ? "IGNORE" : "USE",
       ignoreTools,
-      mcpClientTools,
+      mcpTools,
     );
     const internalTools = [
       {
@@ -161,6 +175,9 @@ async function runLLMRequest(
         },
       },
     ];
+    
+    const allTools = ignoreTools ? internalTools : [...internalTools, ...formattedMcpTools];
+    
     const response = await ollama.chat({
       model: customModelName || LLM_MODEL,
       messages,
@@ -169,7 +186,7 @@ async function runLLMRequest(
       think: isAllowedToStream && isThinkingMode,
       // logprobs: true,
       // @ts-ignore
-      tools: ignoreTools ? [] : mcpClientTools,
+      tools: allTools,
     });
 
     if (isAllowedToStream) {
@@ -184,6 +201,7 @@ async function runLLMRequest(
           const toolsCallAnswer: string = await executeToolsCalls(
             messages,
             chunk?.message?.tool_calls,
+            mcpClient,
           );
           return toolsCallAnswer;
         }
@@ -197,6 +215,7 @@ async function runLLMRequest(
         const toolsCallAnswer: string = await executeToolsCalls(
           messages,
           tool_calls,
+          mcpClient,
         );
         return toolsCallAnswer;
       }
@@ -218,6 +237,7 @@ async function runLLMRequest(
     async function executeToolsCalls(
       messages: ChatMessage[],
       tool_calls: any[],
+      mcpClient: any,
     ) {
       console.log("EXECUTE TOOL_CALLS");
       console.log(JSON.stringify(tool_calls, null, 2));
@@ -232,20 +252,47 @@ async function runLLMRequest(
           typeof tool.function.arguments === "string"
             ? JSON.parse(tool.function.arguments)
             : tool.function.arguments;
+        
+        let output: any;
+        const toolName = tool.function.name;
+        
+        // Try internal tools first
         // @ts-ignore
-        if (availableTools[tool.function.name]) {
+        if (availableTools[toolName]) {
           // @ts-ignore
-          const output = availableTools[tool.function.name](args);
-          // console.log("> Function output:", output, "\n");
-
-          messages.push({
-            role: "tool",
-            content: output.toString(),
-            tool_name: tool.function.name,
-          });
+          output = availableTools[toolName](args);
+        } 
+        // Then try MCP tools
+        else if (mcpClient) {
+          try {
+            const result = await mcpClient.mcp.callTool({
+              name: toolName,
+              arguments: args,
+            });
+            // Extract content from MCP result
+            if (result.content && Array.isArray(result.content)) {
+              output = result.content
+                .map((c: any) => c.text || JSON.stringify(c))
+                .join("\n");
+            } else {
+              output = JSON.stringify(result);
+            }
+          } catch (e) {
+            output = `Error calling MCP tool: ${e}`;
+            if (!isChatMode) {
+              console.warn("Error calling MCP tool", toolName, ":", e);
+            }
+          }
         } else if (!isChatMode) {
-          console.warn("Function", tool.function.name, "not found");
+          output = `Function ${toolName} not found`;
+          console.warn("Function", toolName, "not found");
         }
+
+        messages.push({
+          role: "tool",
+          content: output.toString ? output.toString() : JSON.stringify(output),
+          tool_name: toolName,
+        });
       }
 
       // run LLM again for final answer, based on tools output

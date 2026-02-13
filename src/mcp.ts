@@ -22,7 +22,7 @@ interface MessageParam {
 }
 
 class MCPClient {
-  private mcp: Client;
+  public mcp: Client;
   private ollama: any;
   private model: string;
   private transport: StdioClientTransport | null = null;
