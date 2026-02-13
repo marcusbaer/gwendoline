@@ -3,6 +3,7 @@ import * as fs from "fs";
 import { fileURLToPath } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 
 // https://modelcontextprotocol.io/docs/develop/build-client#typescript
@@ -26,7 +27,9 @@ class MCPClient {
   public mcp: Client;
   private ollama: any;
   private model: string;
-  private transports: Array<StdioClientTransport | SSEClientTransport> = [];
+  private transports: Array<
+    StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
+  > = [];
   private tools: Tool[] = [];
   private connectedClients: Client[] = [];
 
@@ -90,12 +93,32 @@ class MCPClient {
 
   async connectToHttpServer(client: Client, url: string) {
     try {
-      const transport = new SSEClientTransport(new URL(url));
+      // Try StreamableHTTPClientTransport first (modern and recommended)
+      const transport = new StreamableHTTPClientTransport(new URL(url));
       this.transports.push(transport);
       await client.connect(transport);
+      console.log(
+        `Successfully connected to HTTP server via StreamableHTTPClientTransport: ${url}`,
+      );
     } catch (e) {
-      console.log("Failed to connect to HTTP MCP server: ", e);
-      throw e;
+      console.log(
+        `Failed to connect via StreamableHTTPClientTransport, falling back to SSEClientTransport: ${e}`,
+      );
+      try {
+        // Fallback to SSEClientTransport for servers that still use SSE
+        const transport = new SSEClientTransport(new URL(url));
+        this.transports.push(transport);
+        await client.connect(transport);
+        console.log(
+          `Successfully connected to HTTP server via SSEClientTransport: ${url}`,
+        );
+      } catch (fallbackError) {
+        console.log(
+          "Failed to connect to HTTP MCP server with both transports: ",
+          fallbackError,
+        );
+        throw fallbackError;
+      }
     }
   }
 

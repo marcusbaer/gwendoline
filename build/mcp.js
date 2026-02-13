@@ -3,6 +3,7 @@ import * as fs from "fs";
 import { fileURLToPath } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 // https://modelcontextprotocol.io/docs/develop/build-client#typescript
 const mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
@@ -29,7 +30,10 @@ class MCPClient {
             for (const id in servers) {
                 const def = servers[id];
                 const { type } = def;
-                const client = new Client({ name: `mcp-client-${id}`, version: "1.0.0" });
+                const client = new Client({
+                    name: `mcp-client-${id}`,
+                    version: "1.0.0",
+                });
                 try {
                     if (type === "stdio") {
                         await this.connectToStdioServer(client, def.command, def.args || []);
@@ -65,13 +69,25 @@ class MCPClient {
     }
     async connectToHttpServer(client, url) {
         try {
-            const transport = new SSEClientTransport(new URL(url));
+            // Try StreamableHTTPClientTransport first (modern and recommended)
+            const transport = new StreamableHTTPClientTransport(new URL(url));
             this.transports.push(transport);
             await client.connect(transport);
+            console.log(`Successfully connected to HTTP server via StreamableHTTPClientTransport: ${url}`);
         }
         catch (e) {
-            console.log("Failed to connect to HTTP MCP server: ", e);
-            throw e;
+            console.log(`Failed to connect via StreamableHTTPClientTransport, falling back to SSEClientTransport: ${e}`);
+            try {
+                // Fallback to SSEClientTransport for servers that still use SSE
+                const transport = new SSEClientTransport(new URL(url));
+                this.transports.push(transport);
+                await client.connect(transport);
+                console.log(`Successfully connected to HTTP server via SSEClientTransport: ${url}`);
+            }
+            catch (fallbackError) {
+                console.log("Failed to connect to HTTP MCP server with both transports: ", fallbackError);
+                throw fallbackError;
+            }
         }
     }
     async listTools(client) {
