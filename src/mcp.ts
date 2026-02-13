@@ -36,7 +36,20 @@ class MCPClient {
   }
 
   async readMcpJson() {
-    const filePath = path.join(__dirname, "../build/mcp.json");
+    // Try to find mcp.json first in the current working directory (global installation)
+    let filePath = path.join(process.cwd(), "mcp.json");
+
+    if (!fs.existsSync(filePath)) {
+      // Fall back to the build directory (local development)
+      filePath = path.join(__dirname, "../build/mcp.json");
+    }
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error(
+        `mcp.json not found in ${process.cwd()} or in the build directory`,
+      );
+    }
+
     const fileContent = fs.readFileSync(filePath, "utf-8");
     const mcpJson = JSON.parse(fileContent);
 
