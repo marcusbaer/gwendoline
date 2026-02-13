@@ -60,7 +60,6 @@ async function main() {
         throw Error("Could not parse input of chat messages", error || "");
       }
     } else {
-      console.log("RUN LLM REQUEST");
       const content = await runLLMRequest(
         [{ role: "user", content: input.trim() }],
         isChatMode,
@@ -68,6 +67,7 @@ async function main() {
         false,
       );
       process.stdout.write(content);
+      process.exit(0);
     }
   });
 
@@ -80,7 +80,7 @@ async function main() {
       rl.close();
       if (prompt == "/bye") {
         process.stdout.write("Bye!");
-        process.exit(1);
+        process.exit(0);
       }
 
       const content = await runLLMRequest(
@@ -90,7 +90,7 @@ async function main() {
         false,
       );
       process.stdout.write(content);
-      process.exit(1);
+      process.exit(0);
     });
   }
 }
@@ -119,7 +119,7 @@ async function runLLMRequest(
     });
     const isAllowedToStream = !isChatMode && isStreamMode;
     const mcpTools = mcpClient ? mcpClient.getTools() || [] : [];
-    
+
     // Convert MCP tools to Ollama format
     const formattedMcpTools = mcpTools.map((tool: any) => ({
       type: "function",
@@ -132,13 +132,7 @@ async function runLLMRequest(
         },
       },
     }));
-    
-    console.log(
-      "MCP CLIENT TOOLS",
-      ignoreTools ? "IGNORE" : "USE",
-      ignoreTools,
-      mcpTools,
-    );
+
     const internalTools = [
       {
         type: "function",
@@ -175,9 +169,11 @@ async function runLLMRequest(
         },
       },
     ];
-    
-    const allTools = ignoreTools ? internalTools : [...internalTools, ...formattedMcpTools];
-    
+
+    const allTools = ignoreTools
+      ? []
+      : [...internalTools, ...formattedMcpTools];
+
     const response = await ollama.chat({
       model: customModelName || LLM_MODEL,
       messages,
@@ -210,7 +206,6 @@ async function runLLMRequest(
       return "";
     } else {
       const { tool_calls } = response.message;
-      console.log("MSG", tool_calls);
       if (tool_calls) {
         const toolsCallAnswer: string = await executeToolsCalls(
           messages,
@@ -252,16 +247,16 @@ async function runLLMRequest(
           typeof tool.function.arguments === "string"
             ? JSON.parse(tool.function.arguments)
             : tool.function.arguments;
-        
+
         let output: any;
         const toolName = tool.function.name;
-        
+
         // Try internal tools first
         // @ts-ignore
         if (availableTools[toolName]) {
           // @ts-ignore
           output = availableTools[toolName](args);
-        } 
+        }
         // Then try MCP tools
         else if (mcpClient) {
           try {
@@ -293,6 +288,8 @@ async function runLLMRequest(
           content: output.toString ? output.toString() : JSON.stringify(output),
           tool_name: toolName,
         });
+
+        console.log("TOOL_CALL_OUTPUT", output);
       }
 
       // run LLM again for final answer, based on tools output

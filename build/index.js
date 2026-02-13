@@ -40,9 +40,9 @@ async function main() {
             }
         }
         else {
-            console.log("RUN LLM REQUEST");
             const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient, false);
             process.stdout.write(content);
+            process.exit(0);
         }
     });
     if (process.stdin.isTTY) {
@@ -54,12 +54,12 @@ async function main() {
             rl.close();
             if (prompt == "/bye") {
                 process.stdout.write("Bye!");
-                process.exit(1);
+                process.exit(0);
             }
             const content = await runLLMRequest([{ role: "user", content: prompt }], false, // chat mode not supported with user input interface
             mcpClient, false);
             process.stdout.write(content);
-            process.exit(1);
+            process.exit(0);
         });
     }
 }
@@ -92,7 +92,6 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTool
                 },
             },
         }));
-        console.log("MCP CLIENT TOOLS", ignoreTools ? "IGNORE" : "USE", ignoreTools, mcpTools);
         const internalTools = [
             {
                 type: "function",
@@ -129,7 +128,9 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTool
                 },
             },
         ];
-        const allTools = ignoreTools ? internalTools : [...internalTools, ...formattedMcpTools];
+        const allTools = ignoreTools
+            ? []
+            : [...internalTools, ...formattedMcpTools];
         const response = await ollama.chat({
             model: customModelName || LLM_MODEL,
             messages,
@@ -157,7 +158,6 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTool
         }
         else {
             const { tool_calls } = response.message;
-            console.log("MSG", tool_calls);
             if (tool_calls) {
                 const toolsCallAnswer = await executeToolsCalls(messages, tool_calls, mcpClient);
                 return toolsCallAnswer;
@@ -227,6 +227,7 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTool
                     content: output.toString ? output.toString() : JSON.stringify(output),
                     tool_name: toolName,
                 });
+                console.log("TOOL_CALL_OUTPUT", output);
             }
             // run LLM again for final answer, based on tools output
             if (!isChatMode && isAllowedToStream) {
