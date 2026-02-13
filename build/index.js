@@ -174,8 +174,8 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTool
             return response.message.content;
         }
         async function executeToolsCalls(messages, tool_calls, mcpClient) {
-            console.log("EXECUTE TOOL_CALLS");
-            console.log(JSON.stringify(tool_calls, null, 2));
+            // console.log("EXECUTE TOOL_CALLS");
+            // console.log(JSON.stringify(tool_calls, null, 2));
             for (const tool of tool_calls) {
                 // console.log(
                 //   "\nCalling function:",
@@ -227,7 +227,7 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTool
                     content: output.toString ? output.toString() : JSON.stringify(output),
                     tool_name: toolName,
                 });
-                console.log("TOOL_CALL_OUTPUT", output);
+                // console.log("TOOL_CALL_OUTPUT", output);
             }
             // run LLM again for final answer, based on tools output
             if (!isChatMode && isAllowedToStream) {

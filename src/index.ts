@@ -234,8 +234,8 @@ async function runLLMRequest(
       tool_calls: any[],
       mcpClient: any,
     ) {
-      console.log("EXECUTE TOOL_CALLS");
-      console.log(JSON.stringify(tool_calls, null, 2));
+      // console.log("EXECUTE TOOL_CALLS");
+      // console.log(JSON.stringify(tool_calls, null, 2));
       for (const tool of tool_calls) {
         // console.log(
         //   "\nCalling function:",
@@ -289,7 +289,7 @@ async function runLLMRequest(
           tool_name: toolName,
         });
 
-        console.log("TOOL_CALL_OUTPUT", output);
+        // console.log("TOOL_CALL_OUTPUT", output);
       }
 
       // run LLM again for final answer, based on tools output
