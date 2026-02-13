@@ -178,10 +178,7 @@ async function runLLMRequest(
       },
     ];
 
-    const allTools = ignoreTools
-      ? []
-      : [...internalTools, ...formattedMcpTools];
-
+    const allTools = [...internalTools, ...formattedMcpTools];
     const response = await ollama.chat({
       model: customModelName || LLM_MODEL,
       messages,
@@ -202,6 +199,11 @@ async function runLLMRequest(
           process.stdout.write(chunk.message.content);
         }
         if (chunk?.message?.tool_calls) {
+          console.error(
+            `[DEBUG] Requesting TOOL_CALLS:`,
+            JSON.stringify(chunk?.message?.tool_calls, null, 2),
+          );
+
           const toolsCallAnswer: string = await executeToolsCalls(
             messages,
             chunk?.message?.tool_calls,
@@ -269,6 +271,12 @@ async function runLLMRequest(
         else if (mcpClient) {
           try {
             const result = await mcpClient.callTool(toolName, args);
+            // Debug: Log the raw result
+            console.error(
+              `[DEBUG] Raw MCP result for ${toolName}:`,
+              JSON.stringify(result, null, 2),
+            );
+
             // Extract content from MCP result
             if (result.content && Array.isArray(result.content)) {
               output = result.content
@@ -277,6 +285,9 @@ async function runLLMRequest(
             } else {
               output = JSON.stringify(result);
             }
+
+            // Debug: Log the extracted output
+            console.error(`[DEBUG] Extracted output for ${toolName}:`, output);
           } catch (e) {
             output = `Error calling MCP tool: ${e}`;
             if (!isChatMode) {
@@ -293,6 +304,12 @@ async function runLLMRequest(
           content: output.toString ? output.toString() : JSON.stringify(output),
           tool_name: toolName,
         });
+
+        // Debug: Log what we're pushing to messages
+        console.error(
+          `[DEBUG] Message content for ${toolName}:`,
+          output.toString ? output.toString() : JSON.stringify(output),
+        );
 
         // console.log("TOOL_CALL_OUTPUT", output);
       }
