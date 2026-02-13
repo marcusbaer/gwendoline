@@ -63,3 +63,82 @@ Run command:
 ```sh
 cat chat-input.json | gwendoline --chat --model gpt-oss:120b-cloud > chat-output.json
 ```
+
+## Command Line Parameters
+
+Gwendoline supports the following command line parameters to customize its behavior:
+
+### Model Selection
+
+- **`--cloud`**  
+  Uses the cloud-based model (`gpt-oss:120b-cloud`) instead of the local model.
+  
+- **`--model <model-name>`**  
+  Specifies a custom model to use. Overrides both the default local and cloud models.  
+  Example: `gwen --model llama3:8b`
+
+### MCP Integration
+
+- **`--mcp`**  
+  Enables MCP (Model Context Protocol) client integration. Loads MCP tools from `mcp.json` in the current working directory.
+  
+  When enabled, Gwendoline will:
+  - Connect to configured MCP servers (stdio, HTTP, SSE)
+  - Make available MCP tools to the language model
+  - Load server instructions and resources
+
+### Output Modes
+
+- **`--stream`**  
+  Enables streaming mode where the response is output in real-time as it's generated.  
+  Cannot be combined with `--chat` mode.
+  
+- **`--thinking`**  
+  Enables thinking mode where the model's reasoning process is displayed before the actual response.  
+  Works best with `--stream` for real-time thinking output.  
+  Cannot be combined with `--chat` mode.
+
+### Chat Mode
+
+- **`--chat`**  
+  Enables chat mode for processing conversation history.  
+  Expects input in JSON format as an array of message objects with `role` and `content` fields.  
+  Output will also be in the same JSON format with the assistant's response appended.  
+  Cannot be combined with `--stream` or `--thinking`.
+
+### Debugging
+
+- **`--debug`**  
+  Enables debug mode with verbose logging including:
+  - Tool calls requested by the LLM
+  - Tool arguments and responses
+  - Message flow between user, tools, and assistant
+  - Raw MCP results
+
+## MCP Configuration
+
+When using the `--mcp` parameter, Gwendoline looks for a `mcp.json` file in the current working directory. This file should define the MCP servers to connect to.
+
+Example `mcp.json`:
+
+```json
+{
+  "servers": {
+    "my-stdio-server": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["./server.js"]
+    },
+    "my-http-server": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp"
+    }
+  }
+}
+```
+
+The MCP client will:
+- Connect to all configured servers
+- Register their tools and make them available to the language model
+- Handle tool calls transparently
+- Provide structured error messages when tools fail
