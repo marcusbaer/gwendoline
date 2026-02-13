@@ -56,8 +56,10 @@ async function main() {
           mcpClient,
         );
         process.stdout.write(content);
+        process.exit(0);
       } catch (error) {
-        throw Error("Could not parse input of chat messages", error || "");
+        console.error("Could not parse input of chat messages:", error);
+        process.exit(1);
       }
     } else {
       const content = await runLLMRequest(
@@ -393,16 +395,15 @@ async function initializeMcpClient() {
     try {
       const tools = await mcpClient.readMcpJson();
       resolve(mcpClient);
-      // await mcpClient.processQuery("Why is the sky blue?");
-      // await mcpClient.chatLoop();
     } catch (e) {
-      console.error("Error:", e);
-      await mcpClient.cleanup();
-      resolve(mcpClient);
-      // process.exit(1);
-      // } finally {
-      //   await mcpClient.cleanup();
-      //   process.exit(0);
+      console.error("Error initializing MCP client:", e);
+      try {
+        await mcpClient.cleanup();
+      } catch (cleanupError) {
+        console.error("Error during MCP cleanup:", cleanupError);
+      }
+      // Don't reject - continue without MCP and let the application run
+      resolve(null);
     }
   });
 }
