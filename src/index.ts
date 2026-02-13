@@ -145,7 +145,11 @@ async function runLLMRequest(
           name: "internalUtcTime",
           description:
             "Get current UTC time. Returns a JSON object with 'time' and 'timestamp'.",
-          parameters: {},
+          parameters: {
+            type: "object",
+            properties: {},
+            required: [],
+          },
         },
       },
     ];
@@ -219,15 +223,20 @@ async function runLLMRequest(
       tool_calls: any[],
       mcpClient: any,
     ) {
-      // console.log("EXECUTE TOOL_CALLS");
-      // console.log(JSON.stringify(tool_calls, null, 2));
+      if (isDebugMode) {
+        console.error("[DEBUG] EXECUTE TOOL_CALLS:");
+        console.error(JSON.stringify(tool_calls, null, 2));
+      }
+
       for (const tool of tool_calls) {
-        // console.log(
-        //   "\nCalling function:",
-        //   tool.function.name,
-        //   "with arguments:",
-        //   tool.function.arguments,
-        // );
+        if (isDebugMode) {
+          console.error(
+            `\n[DEBUG] Calling function: ${tool.function.name}`,
+            "with arguments:",
+            tool.function.arguments,
+          );
+        }
+
         const args =
           typeof tool.function.arguments === "string"
             ? JSON.parse(tool.function.arguments)
@@ -240,7 +249,15 @@ async function runLLMRequest(
         // @ts-ignore
         if (availableTools[toolName]) {
           // @ts-ignore
-          output = availableTools[toolName](args);
+          const result = availableTools[toolName](args);
+          // Extract content from internal tool result (same format as MCP)
+          if (result.content && Array.isArray(result.content)) {
+            output = result.content
+              .map((c: any) => c.text || JSON.stringify(c))
+              .join("\n");
+          } else {
+            output = JSON.stringify(result);
+          }
         }
         // Then try MCP tools
         else if (mcpClient) {
@@ -269,7 +286,12 @@ async function runLLMRequest(
           } catch (e) {
             output = `Error calling MCP tool: ${e}`;
             if (!isChatMode) {
-              console.warn("Error calling MCP tool", toolName, ":", e);
+              console.warn(
+                `Error calling MCP tool ${toolName} with args:`,
+                JSON.stringify(args, null, 2),
+                "\nError:",
+                e,
+              );
             }
           }
         } else if (!isChatMode) {

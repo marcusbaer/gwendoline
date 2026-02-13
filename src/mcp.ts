@@ -204,8 +204,14 @@ class MCPClient {
           }
         }
       }
-    } catch (e) {
-      console.warn(`Could not list resources from server ${serverId}:`, e);
+    } catch (e: any) {
+      // Many MCP servers don't support resources - only log if it's not "Method not found"
+      if (e?.code !== -32601) {
+        console.warn(
+          `Could not list resources from server ${serverId}:`,
+          e.message || e,
+        );
+      }
       // This is optional, so don't throw
     }
   }

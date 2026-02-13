@@ -4,9 +4,9 @@ export function internalUtcTime(args) {
         time: now.toISOString(),
         timestamp: now.getTime(),
     };
-    return JSON.stringify({
+    return {
         content: [{ type: "text", text: JSON.stringify(data) }],
-    });
+    };
 }
 export const availableFunctions = {
     internalUtcTime,
