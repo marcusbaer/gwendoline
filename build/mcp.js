@@ -27,43 +27,45 @@ class MCPClient {
             filePath = path.join(__dirname, "../build/mcp.json");
         }
         if (!fs.existsSync(filePath)) {
-            throw new Error(`mcp.json not found in ${process.cwd()} or in the build directory`);
+            console.warn(`mcp.json not found in ${process.cwd()}`);
         }
-        const fileContent = fs.readFileSync(filePath, "utf-8");
-        const mcpJson = JSON.parse(fileContent);
-        if (mcpJson) {
-            const { servers } = mcpJson;
-            for (const serverId in servers) {
-                const def = servers[serverId];
-                const { type } = def;
-                try {
-                    // Create a new Client for each server
-                    const client = new Client({
-                        name: `mcp-client-${serverId}`,
-                        version: "1.0.0",
-                    });
-                    // Connect to the server
-                    if (type === "stdio") {
-                        await this.connectToStdioServer(client, serverId, def.command, def.args || []);
+        else {
+            const fileContent = fs.readFileSync(filePath, "utf-8");
+            const mcpJson = JSON.parse(fileContent);
+            if (mcpJson) {
+                const { servers } = mcpJson;
+                for (const serverId in servers) {
+                    const def = servers[serverId];
+                    const { type } = def;
+                    try {
+                        // Create a new Client for each server
+                        const client = new Client({
+                            name: `mcp-client-${serverId}`,
+                            version: "1.0.0",
+                        });
+                        // Connect to the server
+                        if (type === "stdio") {
+                            await this.connectToStdioServer(client, serverId, def.command, def.args || []);
+                        }
+                        else if (type === "http" || type === "sse") {
+                            await this.connectToHttpServer(client, serverId, def.url);
+                        }
+                        // List and collect tools from this server
+                        await this.listTools(client, serverId);
+                        // List and collect resources/instructions from this server
+                        await this.listResources(client, serverId);
+                        // Store the client
+                        this.connectedClients.set(serverId, client);
+                        console.error(`✓ Connected to MCP server: ${serverId}`);
                     }
-                    else if (type === "http" || type === "sse") {
-                        await this.connectToHttpServer(client, serverId, def.url);
+                    catch (e) {
+                        console.error(`✗ Error connecting to server ${serverId}:`, e);
+                        // Continue with next server (graceful failure)
                     }
-                    // List and collect tools from this server
-                    await this.listTools(client, serverId);
-                    // List and collect resources/instructions from this server
-                    await this.listResources(client, serverId);
-                    // Store the client
-                    this.connectedClients.set(serverId, client);
-                    console.error(`✓ Connected to MCP server: ${serverId}`);
                 }
-                catch (e) {
-                    console.error(`✗ Error connecting to server ${serverId}:`, e);
-                    // Continue with next server (graceful failure)
+                if (this.connectedClients.size === 0) {
+                    throw new Error("No MCP servers could be connected");
                 }
-            }
-            if (this.connectedClients.size === 0) {
-                throw new Error("No MCP servers could be connected");
             }
         }
     }
