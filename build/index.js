@@ -166,6 +166,36 @@ async function runLLMRequest(messages, returnChat = false, mcpClient) {
                 console.error("[DEBUG] EXECUTE TOOL_CALLS:");
                 console.error(JSON.stringify(tool_calls, null, 2));
             }
+            // Helper function to create structured error messages for the LLM
+            function createToolErrorMessage(toolName, args, error) {
+                // Extract meaningful error information
+                let errorMessage = "Unknown error";
+                let errorDetails = "";
+                if (error?.message) {
+                    errorMessage = error.message;
+                }
+                else if (typeof error === "string") {
+                    errorMessage = error;
+                }
+                // Try to extract validation errors (e.g., missing required parameters)
+                if (errorMessage.includes("Invalid arguments")) {
+                    const match = errorMessage.match(/\[([^\]]+)\]/);
+                    if (match) {
+                        try {
+                            const validationErrors = JSON.parse(match[0]);
+                            if (Array.isArray(validationErrors)) {
+                                errorDetails = validationErrors
+                                    .map((e) => `- Parameter '${e.path?.join(".")}': ${e.message} (expected: ${e.expected})`)
+                                    .join("\n");
+                            }
+                        }
+                        catch (e) {
+                            // Could not parse validation errors
+                        }
+                    }
+                }
+                return `Tool '${toolName}' failed with error: ${errorMessage}${errorDetails ? "\n\nParameter issues:\n" + errorDetails : ""}\n\nProvided arguments: ${JSON.stringify(args, null, 2)}\n\nPlease check the tool parameters and try again with corrected values.`;
+            }
             for (const tool of tool_calls) {
                 if (isDebugMode) {
                     console.error(`\n[DEBUG] Calling function: ${tool.function.name}`, "with arguments:", tool.function.arguments);
@@ -178,16 +208,24 @@ async function runLLMRequest(messages, returnChat = false, mcpClient) {
                 // Try internal tools first
                 // @ts-ignore
                 if (availableTools[toolName]) {
-                    // @ts-ignore
-                    const result = availableTools[toolName](args);
-                    // Extract content from internal tool result (same format as MCP)
-                    if (result.content && Array.isArray(result.content)) {
-                        output = result.content
-                            .map((c) => c.text || JSON.stringify(c))
-                            .join("\n");
+                    try {
+                        // @ts-ignore
+                        const result = availableTools[toolName](args);
+                        // Extract content from internal tool result (same format as MCP)
+                        if (result.content && Array.isArray(result.content)) {
+                            output = result.content
+                                .map((c) => c.text || JSON.stringify(c))
+                                .join("\n");
+                        }
+                        else {
+                            output = JSON.stringify(result);
+                        }
                     }
-                    else {
-                        output = JSON.stringify(result);
+                    catch (e) {
+                        output = createToolErrorMessage(toolName, args, e);
+                        if (!isChatMode) {
+                            console.warn(`Error calling internal tool ${toolName} with args:`, JSON.stringify(args, null, 2), "\nError:", e);
+                        }
                     }
                 }
                 // Then try MCP tools
@@ -209,15 +247,17 @@ async function runLLMRequest(messages, returnChat = false, mcpClient) {
                             console.error(`[DEBUG] Extracted output for ${toolName}:`, output);
                     }
                     catch (e) {
-                        output = `Error calling MCP tool: ${e}`;
+                        output = createToolErrorMessage(toolName, args, e);
                         if (!isChatMode) {
                             console.warn(`Error calling MCP tool ${toolName} with args:`, JSON.stringify(args, null, 2), "\nError:", e);
                         }
                     }
                 }
-                else if (!isChatMode) {
-                    output = `Function ${toolName} not found`;
-                    console.warn("Function", toolName, "not found");
+                else {
+                    output = `Tool '${toolName}' not found. Available tools: ${Object.keys(availableTools).join(", ")}${mcpClient ? " and MCP tools" : ""}`;
+                    if (!isChatMode) {
+                        console.warn("Function", toolName, "not found");
+                    }
                 }
                 messages.push({
                     role: "tool",
