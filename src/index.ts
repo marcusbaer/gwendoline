@@ -260,10 +260,7 @@ async function runLLMRequest(
         // Then try MCP tools
         else if (mcpClient) {
           try {
-            const result = await mcpClient.mcp.callTool({
-              name: toolName,
-              arguments: args,
-            });
+            const result = await mcpClient.callTool(toolName, args);
             // Extract content from MCP result
             if (result.content && Array.isArray(result.content)) {
               output = result.content

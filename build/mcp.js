@@ -105,6 +105,24 @@ class MCPClient {
     getTools() {
         return this.tools;
     }
+    async callTool(name, toolArguments) {
+        // Try each connected client until one succeeds
+        for (const client of this.connectedClients) {
+            try {
+                const result = await client.callTool({
+                    name,
+                    arguments: toolArguments,
+                });
+                return result;
+            }
+            catch (e) {
+                // Tool not found in this client, try next
+                continue;
+            }
+        }
+        // If no client succeeded, throw error
+        throw new Error(`Tool ${name} not found in any connected MCP server`);
+    }
     async cleanup() {
         for (const client of this.connectedClients) {
             await client.close();
