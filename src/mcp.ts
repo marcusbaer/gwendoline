@@ -8,7 +8,6 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 
 // https://modelcontextprotocol.io/docs/develop/build-client#typescript
 
-const mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
 
@@ -24,18 +23,14 @@ interface MessageParam {
 }
 
 class MCPClient {
-  public mcp: Client;
+  private connectedClients: Map<string, Client> = new Map();
+  private toolRegistry: Map<string, string> = new Map(); // toolName -> serverId
+  private serverInstructions: Map<string, string> = new Map(); // serverId -> instructions
+  private tools: Tool[] = [];
   private ollama: any;
   private model: string;
-  private transport:
-    | StdioClientTransport
-    | StreamableHTTPClientTransport
-    | SSEClientTransport
-    | null = null;
-  private tools: Tool[] = [];
 
   constructor(ollama: any, model: string) {
-    this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
     this.ollama = ollama;
     this.model = model;
   }
@@ -44,82 +39,98 @@ class MCPClient {
     const filePath = path.join(__dirname, "../build/mcp.json");
     const fileContent = fs.readFileSync(filePath, "utf-8");
     const mcpJson = JSON.parse(fileContent);
+
     if (mcpJson) {
       const { servers } = mcpJson;
-      let isFirstServer = true;
 
-      for (const id in servers) {
-        const def = servers[id];
+      for (const serverId in servers) {
+        const def = servers[serverId];
         const { type } = def;
 
         try {
-          // Use this.mcp for the first server
-          if (isFirstServer) {
-            if (type === "stdio") {
-              await this.connectToStdioServer(
-                this.mcp,
-                def.command,
-                def.args || [],
-              );
-            } else if (type === "http" || type === "sse") {
-              await this.connectToHttpServer(this.mcp, def.url);
-            }
-            await this.listTools(this.mcp);
-            isFirstServer = false;
-          } else {
-            // Skip other servers (MCP Client can only connect to one server)
-            console.log(
-              `Skipping server ${id}: MCP Client can only connect to one server at a time. Using first server only.`,
+          // Create a new Client for each server
+          const client = new Client({
+            name: `mcp-client-${serverId}`,
+            version: "1.0.0",
+          });
+
+          // Connect to the server
+          if (type === "stdio") {
+            await this.connectToStdioServer(
+              client,
+              serverId,
+              def.command,
+              def.args || [],
             );
+          } else if (type === "http" || type === "sse") {
+            await this.connectToHttpServer(client, serverId, def.url);
           }
+
+          // List and collect tools from this server
+          await this.listTools(client, serverId);
+
+          // List and collect resources/instructions from this server
+          await this.listResources(client, serverId);
+
+          // Store the client
+          this.connectedClients.set(serverId, client);
+          console.error(`✓ Connected to MCP server: ${serverId}`);
         } catch (e) {
-          console.error(`Error connecting to server ${id}:`, e);
-          if (isFirstServer) {
-            throw e; // Re-throw if first server fails
-          }
+          console.error(`✗ Error connecting to server ${serverId}:`, e);
+          // Continue with next server (graceful failure)
         }
+      }
+
+      if (this.connectedClients.size === 0) {
+        throw new Error("No MCP servers could be connected");
       }
     }
   }
 
-  async connectToStdioServer(client: Client, command: string, args: []) {
+  private async connectToStdioServer(
+    client: Client,
+    serverId: string,
+    command: string,
+    args: string[],
+  ) {
     try {
       const transport = new StdioClientTransport({
         command,
         args,
       });
-      this.transport = transport;
       await client.connect(transport);
     } catch (e) {
-      console.log("Failed to connect to stdio MCP server: ", e);
+      console.error(`Failed to connect to stdio MCP server ${serverId}:`, e);
       throw e;
     }
   }
 
-  async connectToHttpServer(client: Client, url: string) {
+  private async connectToHttpServer(
+    client: Client,
+    serverId: string,
+    url: string,
+  ) {
     try {
       // Try StreamableHTTPClientTransport first (modern and recommended)
       const transport = new StreamableHTTPClientTransport(new URL(url));
-      this.transport = transport;
       await client.connect(transport);
-      console.log(
-        `Successfully connected to HTTP server via StreamableHTTPClientTransport: ${url}`,
+      console.error(
+        `Successfully connected to HTTP server ${serverId} via StreamableHTTPClientTransport`,
       );
     } catch (e) {
-      console.log(
-        `Failed to connect via StreamableHTTPClientTransport, falling back to SSEClientTransport: ${e}`,
+      console.error(
+        `Failed to connect via StreamableHTTPClientTransport for ${serverId}, falling back to SSEClientTransport`,
       );
       try {
         // Fallback to SSEClientTransport for servers that still use SSE
         const transport = new SSEClientTransport(new URL(url));
-        this.transport = transport;
         await client.connect(transport);
-        console.log(
-          `Successfully connected to HTTP server via SSEClientTransport: ${url}`,
+        console.error(
+          `Successfully connected to HTTP server ${serverId} via SSEClientTransport`,
         );
       } catch (fallbackError) {
-        console.log(
-          "Failed to connect to HTTP MCP server with both transports: ",
+        console.error(
+          `Failed to connect to HTTP MCP server ${serverId} with both transports:`,
           fallbackError,
         );
         throw fallbackError;
@@ -127,28 +138,117 @@ class MCPClient {
     }
   }
 
-  async listTools(client?: Client) {
-    const toolsResult = await (client || this.mcp).listTools();
-    this.tools = toolsResult.tools.map((tool) => {
-      return {
+  private async listTools(client: Client, serverId: string) {
+    try {
+      const toolsResult = await client.listTools();
+      const serverTools = toolsResult.tools.map((tool) => ({
         name: tool.name,
         description: tool.description,
         input_schema: tool.inputSchema,
-      };
-    });
-    console.log(
-      "Connected to server with tools:",
-      this.tools.map(({ name }) => name),
-    );
+      }));
+
+      // Register tools with their server
+      for (const tool of serverTools) {
+        this.toolRegistry.set(tool.name, serverId);
+        this.tools.push(tool);
+      }
+
+      console.error(
+        `  Tools from ${serverId}: ${serverTools.map((t) => t.name).join(", ")}`,
+      );
+    } catch (e) {
+      console.warn(`Could not list tools from server ${serverId}:`, e);
+    }
+  }
+
+  private async listResources(client: Client, serverId: string) {
+    try {
+      const resourcesResult = await client.listResources();
+      const resources = resourcesResult.resources || [];
+
+      // Look for instructions resource
+      for (const resource of resources) {
+        if (
+          resource.name.includes("instruction") ||
+          resource.mimeType?.includes("text")
+        ) {
+          try {
+            const readResult = await client.readResource({
+              uri: resource.uri,
+            });
+            const contents = readResult.contents || [];
+            const instructionText = contents
+              .map((c: any) => c.text || "")
+              .join("\n");
+
+            if (instructionText.trim()) {
+              this.serverInstructions.set(serverId, instructionText);
+              console.error(`  Instructions loaded from ${serverId}`);
+            }
+          } catch (e) {
+            console.warn(
+              `Could not read resource ${resource.uri} from server ${serverId}:`,
+              e,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`Could not list resources from server ${serverId}:`, e);
+      // This is optional, so don't throw
+    }
   }
 
   getTools() {
     return this.tools;
   }
 
+  getServerInstructions(): string {
+    let instructions = "";
+
+    for (const [serverId, instructionText] of this.serverInstructions) {
+      instructions += `\n=== MCP Server: ${serverId} ===\n${instructionText}\n`;
+    }
+
+    return instructions;
+  }
+
+  async callTool(toolName: string, toolArguments: any): Promise<any> {
+    // Find which server has this tool
+    const serverId = this.toolRegistry.get(toolName);
+
+    if (!serverId) {
+      throw new Error(`Tool ${toolName} not found in any MCP server`);
+    }
+
+    const client = this.connectedClients.get(serverId);
+    if (!client) {
+      throw new Error(
+        `Server ${serverId} (providing tool ${toolName}) is not connected`,
+      );
+    }
+
+    try {
+      const result = await client.callTool({
+        name: toolName,
+        arguments: toolArguments,
+      });
+      return result;
+    } catch (e) {
+      throw new Error(
+        `Error calling tool ${toolName} on server ${serverId}: ${e}`,
+      );
+    }
+  }
+
   async cleanup() {
-    if (this.transport) {
-      await this.mcp.close();
+    for (const [serverId, client] of this.connectedClients) {
+      try {
+        await client.close();
+        console.error(`Closed connection to ${serverId}`);
+      } catch (e) {
+        console.warn(`Error closing connection to ${serverId}:`, e);
+      }
     }
   }
 

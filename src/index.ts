@@ -120,6 +120,14 @@ async function runLLMRequest(
     const isAllowedToStream = !isChatMode && isStreamMode;
     const mcpTools = mcpClient ? mcpClient.getTools() || [] : [];
 
+    // Integrate server instructions into the prompt if this is the first message
+    if (mcpClient && messages.length === 1) {
+      const serverInstructions = mcpClient.getServerInstructions();
+      if (serverInstructions) {
+        messages[0].content = `[MCP Server Instructions]\n${serverInstructions}\n\n[User Request]\n${messages[0].content}`;
+      }
+    }
+
     // Convert MCP tools to Ollama format
     const formattedMcpTools = mcpTools.map((tool: any) => ({
       type: "function",
@@ -260,10 +268,7 @@ async function runLLMRequest(
         // Then try MCP tools
         else if (mcpClient) {
           try {
-            const result = await mcpClient.mcp.callTool({
-              name: toolName,
-              arguments: args,
-            });
+            const result = await mcpClient.callTool(toolName, args);
             // Extract content from MCP result
             if (result.content && Array.isArray(result.content)) {
               output = result.content
