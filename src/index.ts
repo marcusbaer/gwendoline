@@ -16,6 +16,7 @@ const useMcp = argv.includes("--mcp");
 const isChatMode = argv.includes("--chat");
 const isStreamMode: boolean = argv.includes("--stream");
 const isThinkingMode: boolean = argv.includes("--thinking");
+const isDebugMode = argv.includes("--debug");
 
 interface ChatMessage {
   role: string;
@@ -199,10 +200,11 @@ async function runLLMRequest(
           process.stdout.write(chunk.message.content);
         }
         if (chunk?.message?.tool_calls) {
-          console.error(
-            `[DEBUG] Requesting TOOL_CALLS:`,
-            JSON.stringify(chunk?.message?.tool_calls, null, 2),
-          );
+          if (isDebugMode)
+            console.error(
+              `[DEBUG] Requesting TOOL_CALLS:`,
+              JSON.stringify(chunk?.message?.tool_calls, null, 2),
+            );
 
           const toolsCallAnswer: string = await executeToolsCalls(
             messages,
@@ -271,11 +273,11 @@ async function runLLMRequest(
         else if (mcpClient) {
           try {
             const result = await mcpClient.callTool(toolName, args);
-            // Debug: Log the raw result
-            console.error(
-              `[DEBUG] Raw MCP result for ${toolName}:`,
-              JSON.stringify(result, null, 2),
-            );
+            if (isDebugMode)
+              console.error(
+                `[DEBUG] Raw MCP result for ${toolName}:`,
+                JSON.stringify(result, null, 2),
+              );
 
             // Extract content from MCP result
             if (result.content && Array.isArray(result.content)) {
@@ -286,8 +288,11 @@ async function runLLMRequest(
               output = JSON.stringify(result);
             }
 
-            // Debug: Log the extracted output
-            console.error(`[DEBUG] Extracted output for ${toolName}:`, output);
+            if (isDebugMode)
+              console.error(
+                `[DEBUG] Extracted output for ${toolName}:`,
+                output,
+              );
           } catch (e) {
             output = `Error calling MCP tool: ${e}`;
             if (!isChatMode) {
@@ -306,12 +311,11 @@ async function runLLMRequest(
         });
 
         // Debug: Log what we're pushing to messages
-        console.error(
-          `[DEBUG] Message content for ${toolName}:`,
-          output.toString ? output.toString() : JSON.stringify(output),
-        );
-
-        // console.log("TOOL_CALL_OUTPUT", output);
+        if (isDebugMode)
+          console.error(
+            `[DEBUG] Message content for ${toolName}:`,
+            output.toString ? output.toString() : JSON.stringify(output),
+          );
       }
 
       // run LLM again for final answer, based on tools output
