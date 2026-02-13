@@ -33,7 +33,7 @@ async function main() {
         if (isChatMode) {
             try {
                 const inputMessages = JSON.parse(input.trim() || "[]");
-                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient, false);
+                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient);
                 process.stdout.write(content);
             }
             catch (error) {
@@ -41,7 +41,7 @@ async function main() {
             }
         }
         else {
-            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient, false);
+            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient);
             process.stdout.write(content);
             process.exit(0);
         }
@@ -58,7 +58,7 @@ async function main() {
                 process.exit(0);
             }
             const content = await runLLMRequest([{ role: "user", content: prompt }], false, // chat mode not supported with user input interface
-            mcpClient, false);
+            mcpClient);
             process.stdout.write(content);
             process.exit(0);
         });
@@ -68,7 +68,7 @@ main().catch((error) => {
     console.error("Fatal error in main():", error);
     process.exit(1);
 });
-async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTools = false) {
+async function runLLMRequest(messages, returnChat = false, mcpClient) {
     const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
     try {
         const ollama = new Ollama({
@@ -104,39 +104,15 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTool
             {
                 type: "function",
                 function: {
-                    name: "getConditions",
-                    description: "Get the weather conditions for a city",
-                    parameters: {
-                        type: "object",
-                        required: ["city"],
-                        properties: {
-                            city: {
-                                type: "string",
-                                description: "The name of the city",
-                            },
-                        },
-                    },
-                },
-            },
-            {
-                type: "function",
-                function: {
-                    name: "getTemperature",
-                    description: "Get the temperature for a city in Celsius",
-                    parameters: {
-                        type: "object",
-                        required: ["city"],
-                        properties: {
-                            city: {
-                                type: "string",
-                                description: "The name of the city",
-                            },
-                        },
-                    },
+                    name: "internalUtcTime",
+                    description: "Get current UTC time. Returns a JSON object with 'time' and 'timestamp'.",
+                    parameters: {},
                 },
             },
         ];
-        const allTools = [...internalTools, ...formattedMcpTools];
+        const allTools = mcpTools
+            ? [...internalTools, ...formattedMcpTools]
+            : internalTools;
         const response = await ollama.chat({
             model: customModelName || LLM_MODEL,
             messages,
@@ -244,7 +220,7 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTool
             if (!isChatMode && isAllowedToStream) {
                 console.log("\n================\n");
             }
-            return await runLLMRequest(messages, isChatMode, mcpClient, true);
+            return await runLLMRequest(messages, isChatMode, mcpClient);
         }
     }
     catch (e) {

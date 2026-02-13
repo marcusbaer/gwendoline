@@ -54,7 +54,6 @@ async function main() {
           inputMessages,
           isChatMode,
           mcpClient,
-          false,
         );
         process.stdout.write(content);
       } catch (error) {
@@ -65,7 +64,6 @@ async function main() {
         [{ role: "user", content: input.trim() }],
         isChatMode,
         mcpClient,
-        false,
       );
       process.stdout.write(content);
       process.exit(0);
@@ -88,7 +86,6 @@ async function main() {
         [{ role: "user", content: prompt }],
         false, // chat mode not supported with user input interface
         mcpClient,
-        false,
       );
       process.stdout.write(content);
       process.exit(0);
@@ -105,7 +102,6 @@ async function runLLMRequest(
   messages: ChatMessage[],
   returnChat = false,
   mcpClient: any,
-  ignoreTools = false,
 ) {
   const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
 
@@ -146,40 +142,17 @@ async function runLLMRequest(
       {
         type: "function",
         function: {
-          name: "getConditions",
-          description: "Get the weather conditions for a city",
-          parameters: {
-            type: "object",
-            required: ["city"],
-            properties: {
-              city: {
-                type: "string",
-                description: "The name of the city",
-              },
-            },
-          },
-        },
-      },
-      {
-        type: "function",
-        function: {
-          name: "getTemperature",
-          description: "Get the temperature for a city in Celsius",
-          parameters: {
-            type: "object",
-            required: ["city"],
-            properties: {
-              city: {
-                type: "string",
-                description: "The name of the city",
-              },
-            },
-          },
+          name: "internalUtcTime",
+          description:
+            "Get current UTC time. Returns a JSON object with 'time' and 'timestamp'.",
+          parameters: {},
         },
       },
     ];
 
-    const allTools = [...internalTools, ...formattedMcpTools];
+    const allTools = mcpTools
+      ? [...internalTools, ...formattedMcpTools]
+      : internalTools;
     const response = await ollama.chat({
       model: customModelName || LLM_MODEL,
       messages,
@@ -322,7 +295,7 @@ async function runLLMRequest(
       if (!isChatMode && isAllowedToStream) {
         console.log("\n================\n");
       }
-      return await runLLMRequest(messages, isChatMode, mcpClient, true);
+      return await runLLMRequest(messages, isChatMode, mcpClient);
     }
   } catch (e) {
     return `Error: ${e}`;
