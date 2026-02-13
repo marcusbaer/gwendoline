@@ -3,6 +3,7 @@ import * as fs from "fs";
 import { fileURLToPath } from "url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 // https://modelcontextprotocol.io/docs/develop/build-client#typescript
 const mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
@@ -11,8 +12,9 @@ class MCPClient {
     mcp;
     ollama;
     model;
-    transport = null;
+    transports = [];
     tools = [];
+    connectedClients = [];
     constructor(ollama, model) {
         this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
         this.ollama = ollama;
@@ -27,44 +29,70 @@ class MCPClient {
             for (const id in servers) {
                 const def = servers[id];
                 const { type } = def;
-                if (type === "stdio") {
-                    await this.connectToServer(def.command, def.args || []);
+                const client = new Client({ name: `mcp-client-${id}`, version: "1.0.0" });
+                try {
+                    if (type === "stdio") {
+                        await this.connectToStdioServer(client, def.command, def.args || []);
+                    }
+                    else if (type === "http" || type === "sse") {
+                        await this.connectToHttpServer(client, def.url);
+                    }
+                    // Sammle Tools von diesem Server
+                    await this.listTools(client);
+                    // Speichere den Client für später (optional für tool calls)
+                    this.connectedClients.push(client);
                 }
-                // TODO: support of http/sse
+                catch (e) {
+                    console.error(`Error connecting to server ${id}:`, e);
+                    // Fahre mit dem nächsten Server fort
+                }
             }
-            // here needed to load tools
-            await this.listTools();
         }
     }
-    async connectToServer(command, args) {
+    async connectToStdioServer(client, command, args) {
         try {
             const transport = new StdioClientTransport({
                 command,
                 args,
             });
-            await this.mcp.connect(transport);
+            this.transports.push(transport);
+            await client.connect(transport);
         }
         catch (e) {
-            console.log("Failed to connect to MCP server: ", e);
+            console.log("Failed to connect to stdio MCP server: ", e);
             throw e;
         }
     }
-    async listTools() {
-        const toolsResult = await this.mcp.listTools();
-        this.tools = toolsResult.tools.map((tool) => {
+    async connectToHttpServer(client, url) {
+        try {
+            const transport = new SSEClientTransport(new URL(url));
+            this.transports.push(transport);
+            await client.connect(transport);
+        }
+        catch (e) {
+            console.log("Failed to connect to HTTP MCP server: ", e);
+            throw e;
+        }
+    }
+    async listTools(client) {
+        const toolsResult = await (client || this.mcp).listTools();
+        const newTools = toolsResult.tools.map((tool) => {
             return {
                 name: tool.name,
                 description: tool.description,
                 input_schema: tool.inputSchema,
             };
         });
-        console.log("Connected to server with tools:", this.tools.map(({ name }) => name));
+        this.tools.push(...newTools);
+        console.log("Connected to server with tools:", newTools.map(({ name }) => name));
     }
     getTools() {
         return this.tools;
     }
     async cleanup() {
-        await this.mcp.close();
+        for (const client of this.connectedClients) {
+            await client.close();
+        }
     }
 }
 export default MCPClient;

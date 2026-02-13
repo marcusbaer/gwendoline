@@ -179,7 +179,7 @@ async function runLLMRequest(
       messages,
       // @ts-ignore
       stream: isAllowedToStream,
-      think: isAllowedToStream && isThinkingMode,
+      think: isThinkingMode && isAllowedToStream,
       // logprobs: true,
       // @ts-ignore
       tools: allTools,

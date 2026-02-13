@@ -136,7 +136,7 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, ignoreTool
             messages,
             // @ts-ignore
             stream: isAllowedToStream,
-            think: isAllowedToStream && isThinkingMode,
+            think: isThinkingMode && isAllowedToStream,
             // logprobs: true,
             // @ts-ignore
             tools: allTools,
