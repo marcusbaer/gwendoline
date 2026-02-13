@@ -13,9 +13,8 @@ class MCPClient {
     mcp;
     ollama;
     model;
-    transports = [];
+    transport = null;
     tools = [];
-    connectedClients = [];
     constructor(ollama, model) {
         this.mcp = new Client({ name: "mcp-client-cli", version: "1.0.0" });
         this.ollama = ollama;
@@ -27,28 +26,32 @@ class MCPClient {
         const mcpJson = JSON.parse(fileContent);
         if (mcpJson) {
             const { servers } = mcpJson;
+            let isFirstServer = true;
             for (const id in servers) {
                 const def = servers[id];
                 const { type } = def;
-                const client = new Client({
-                    name: `mcp-client-${id}`,
-                    version: "1.0.0",
-                });
                 try {
-                    if (type === "stdio") {
-                        await this.connectToStdioServer(client, def.command, def.args || []);
+                    // Use this.mcp for the first server
+                    if (isFirstServer) {
+                        if (type === "stdio") {
+                            await this.connectToStdioServer(this.mcp, def.command, def.args || []);
+                        }
+                        else if (type === "http" || type === "sse") {
+                            await this.connectToHttpServer(this.mcp, def.url);
+                        }
+                        await this.listTools(this.mcp);
+                        isFirstServer = false;
                     }
-                    else if (type === "http" || type === "sse") {
-                        await this.connectToHttpServer(client, def.url);
+                    else {
+                        // Skip other servers (MCP Client can only connect to one server)
+                        console.log(`Skipping server ${id}: MCP Client can only connect to one server at a time. Using first server only.`);
                     }
-                    // Sammle Tools von diesem Server
-                    await this.listTools(client);
-                    // Speichere den Client für später (optional für tool calls)
-                    this.connectedClients.push(client);
                 }
                 catch (e) {
                     console.error(`Error connecting to server ${id}:`, e);
-                    // Fahre mit dem nächsten Server fort
+                    if (isFirstServer) {
+                        throw e; // Re-throw if first server fails
+                    }
                 }
             }
         }
@@ -59,7 +62,7 @@ class MCPClient {
                 command,
                 args,
             });
-            this.transports.push(transport);
+            this.transport = transport;
             await client.connect(transport);
         }
         catch (e) {
@@ -71,7 +74,7 @@ class MCPClient {
         try {
             // Try StreamableHTTPClientTransport first (modern and recommended)
             const transport = new StreamableHTTPClientTransport(new URL(url));
-            this.transports.push(transport);
+            this.transport = transport;
             await client.connect(transport);
             console.log(`Successfully connected to HTTP server via StreamableHTTPClientTransport: ${url}`);
         }
@@ -80,7 +83,7 @@ class MCPClient {
             try {
                 // Fallback to SSEClientTransport for servers that still use SSE
                 const transport = new SSEClientTransport(new URL(url));
-                this.transports.push(transport);
+                this.transport = transport;
                 await client.connect(transport);
                 console.log(`Successfully connected to HTTP server via SSEClientTransport: ${url}`);
             }
@@ -92,40 +95,21 @@ class MCPClient {
     }
     async listTools(client) {
         const toolsResult = await (client || this.mcp).listTools();
-        const newTools = toolsResult.tools.map((tool) => {
+        this.tools = toolsResult.tools.map((tool) => {
             return {
                 name: tool.name,
                 description: tool.description,
                 input_schema: tool.inputSchema,
             };
         });
-        this.tools.push(...newTools);
-        console.log("Connected to server with tools:", newTools.map(({ name }) => name));
+        console.log("Connected to server with tools:", this.tools.map(({ name }) => name));
     }
     getTools() {
         return this.tools;
     }
-    async callTool(name, toolArguments) {
-        // Try each connected client until one succeeds
-        for (const client of this.connectedClients) {
-            try {
-                const result = await client.callTool({
-                    name,
-                    arguments: toolArguments,
-                });
-                return result;
-            }
-            catch (e) {
-                // Tool not found in this client, try next
-                continue;
-            }
-        }
-        // If no client succeeded, throw error
-        throw new Error(`Tool ${name} not found in any connected MCP server`);
-    }
     async cleanup() {
-        for (const client of this.connectedClients) {
-            await client.close();
+        if (this.transport) {
+            await this.mcp.close();
         }
     }
 }
