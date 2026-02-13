@@ -39,6 +39,7 @@ cat prompt.md | gwen --stream
 cat prompt.md | gwen --thinking
 cat prompt.md | gwen --stream --thinking
 cat input.json | gwen --chat > output.json
+cat input.json | gwen --chat --mcp > output.json
 gwen --debug
 ```
 
