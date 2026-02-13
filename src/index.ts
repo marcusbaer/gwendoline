@@ -36,32 +36,8 @@ if (hasLLMSpecified) {
 
 async function main() {
   let input = "";
-  let mcpClient = null;
 
-  if (useMcp) {
-    const ollama = new Ollama({
-      // host: "http://127.0.0.1:11434",
-      headers: {
-        //   Authorization: "Bearer <api key>",
-        //   "X-Custom-Header": "custom-value",
-        "User-Agent": "Gwendoline/0.0",
-      },
-    });
-    const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
-    mcpClient = new MCPClient(ollama, customModelName || LLM_MODEL);
-    try {
-      await mcpClient.readMcpJson();
-      // await mcpClient.processQuery("Why is the sky blue?");
-      // await mcpClient.chatLoop();
-    } catch (e) {
-      console.error("Error:", e);
-      await mcpClient.cleanup();
-      process.exit(1);
-      // } finally {
-      //   await mcpClient.cleanup();
-      //   process.exit(0);
-    }
-  }
+  const mcpClient = useMcp ? await initializeMcpClient() : null;
 
   process.stdin.setEncoding("utf8");
 
@@ -84,6 +60,7 @@ async function main() {
         throw Error("Could not parse input of chat messages", error || "");
       }
     } else {
+      console.log("RUN LLM REQUEST");
       const content = await runLLMRequest(
         [{ role: "user", content: input.trim() }],
         isChatMode,
@@ -141,6 +118,49 @@ async function runLLMRequest(
       },
     });
     const isAllowedToStream = !isChatMode && isStreamMode;
+    const mcpClientTools = mcpClient ? mcpClient.getTools() || [] : [];
+    console.log(
+      "MCP CLIENT TOOLS",
+      ignoreTools ? "IGNORE" : "USE",
+      ignoreTools,
+      mcpClientTools,
+    );
+    const internalTools = [
+      {
+        type: "function",
+        function: {
+          name: "getConditions",
+          description: "Get the weather conditions for a city",
+          parameters: {
+            type: "object",
+            required: ["city"],
+            properties: {
+              city: {
+                type: "string",
+                description: "The name of the city",
+              },
+            },
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "getTemperature",
+          description: "Get the temperature for a city in Celsius",
+          parameters: {
+            type: "object",
+            required: ["city"],
+            properties: {
+              city: {
+                type: "string",
+                description: "The name of the city",
+              },
+            },
+          },
+        },
+      },
+    ];
     const response = await ollama.chat({
       model: customModelName || LLM_MODEL,
       messages,
@@ -149,45 +169,7 @@ async function runLLMRequest(
       think: isAllowedToStream && isThinkingMode,
       // logprobs: true,
       // @ts-ignore
-      // tools: mcpClient ? mcpClient.tools || [] : [],
-      tools: ignoreTools
-        ? []
-        : [
-            {
-              type: "function",
-              function: {
-                name: "getConditions",
-                description: "Get the weather conditions for a city",
-                parameters: {
-                  type: "object",
-                  required: ["city"],
-                  properties: {
-                    city: {
-                      type: "string",
-                      description: "The name of the city",
-                    },
-                  },
-                },
-              },
-            },
-            {
-              type: "function",
-              function: {
-                name: "getTemperature",
-                description: "Get the temperature for a city in Celsius",
-                parameters: {
-                  type: "object",
-                  required: ["city"],
-                  properties: {
-                    city: {
-                      type: "string",
-                      description: "The name of the city",
-                    },
-                  },
-                },
-              },
-            },
-          ],
+      tools: ignoreTools ? [] : mcpClientTools,
     });
 
     if (isAllowedToStream) {
@@ -210,6 +192,7 @@ async function runLLMRequest(
       return "";
     } else {
       const { tool_calls } = response.message;
+      console.log("MSG", tool_calls);
       if (tool_calls) {
         const toolsCallAnswer: string = await executeToolsCalls(
           messages,
@@ -236,7 +219,8 @@ async function runLLMRequest(
       messages: ChatMessage[],
       tool_calls: any[],
     ) {
-      // console.log(JSON.stringify(tool_calls, null, 2));
+      console.log("EXECUTE TOOL_CALLS");
+      console.log(JSON.stringify(tool_calls, null, 2));
       for (const tool of tool_calls) {
         // console.log(
         //   "\nCalling function:",
@@ -273,4 +257,34 @@ async function runLLMRequest(
   } catch (e) {
     return `Error: ${e}`;
   }
+}
+
+async function initializeMcpClient() {
+  return new Promise(async (resolve, reject) => {
+    let mcpClient = null;
+    const ollama = new Ollama({
+      // host: "http://127.0.0.1:11434",
+      headers: {
+        //   Authorization: "Bearer <api key>",
+        //   "X-Custom-Header": "custom-value",
+        "User-Agent": "Gwendoline/0.0",
+      },
+    });
+    const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
+    mcpClient = new MCPClient(ollama, customModelName || LLM_MODEL);
+    try {
+      const tools = await mcpClient.readMcpJson();
+      resolve(mcpClient);
+      // await mcpClient.processQuery("Why is the sky blue?");
+      // await mcpClient.chatLoop();
+    } catch (e) {
+      console.error("Error:", e);
+      await mcpClient.cleanup();
+      resolve(mcpClient);
+      // process.exit(1);
+      // } finally {
+      //   await mcpClient.cleanup();
+      //   process.exit(0);
+    }
+  });
 }

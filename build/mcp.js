@@ -33,7 +33,7 @@ class MCPClient {
                 // TODO: support of http/sse
             }
             // here needed to load tools
-            this.listTools();
+            await this.listTools();
         }
     }
     async connectToServer(command, args) {
@@ -65,53 +65,6 @@ class MCPClient {
     }
     async cleanup() {
         await this.mcp.close();
-    }
-    async processQuery(query) {
-        const messages = [
-            {
-                role: "user",
-                content: query,
-            },
-        ];
-        const response = await this.ollama.chat({
-            model: this.model,
-            messages,
-            stream: false,
-            think: false,
-            tools: this.tools,
-        });
-        // const response = await this.anthropic.messages.create({
-        //   model: "claude-sonnet-4-20250514",
-        //   max_tokens: 1000,
-        //   messages,
-        //   tools: this.tools,
-        // });
-        const finalText = [];
-        for (const content of response.content) {
-            if (content.type === "text") {
-                finalText.push(content.text);
-            }
-            else if (content.type === "tool_use") {
-                const toolName = content.name;
-                const toolArgs = content.input;
-                const result = await this.mcp.callTool({
-                    name: toolName,
-                    arguments: toolArgs,
-                });
-                finalText.push(`[Calling tool ${toolName} with args ${JSON.stringify(toolArgs)}]`);
-                messages.push({
-                    role: "user",
-                    content: result.content,
-                });
-                // const response = await this.anthropic.messages.create({
-                //   model: "claude-sonnet-4-20250514",
-                //   max_tokens: 1000,
-                //   messages,
-                // });
-                finalText.push(response.content[0].type === "text" ? response.content[0].text : "");
-            }
-        }
-        return finalText.join("\n");
     }
 }
 export default MCPClient;
