@@ -2,6 +2,41 @@
 
 Gwendoline is a CLI based tool for interacting with language models directly from your terminal, allowing you to send prompts and receive responses via standard input and output.
 
+2 main advantages to Ollama
+
+- conversations with chat history
+- MCP integration, MCP tooling, MCP tool calling with LLM re-call
+
+task flow in MAS with Gwen's single task responsibility:
+
+```mermaid
+flowchart TD
+    Task_1[Gwen] --> Task_2[Gwen]
+    Task_2[Gwen] --> Task_3[Gwen]
+```
+
+Gwen process
+
+```mermaid
+flowchart LR
+    subgraph Gwen
+        direction TB
+        START@{ shape: sm-circ, label: "Small start" }
+        START --> MCPinit(MCP initialization)
+        START --> Retriever(Retriever)
+        MCPinit --> LLM
+        Retriever --> LLM
+        LLM --> tool_calls{tool calls ?}
+        tool_calls --> |yes| MCPcalls[call tools]
+        MCPcalls --> LLM
+        tool_calls --> |no| END@{ shape: framed-circle, label: "Stop" }
+    end
+    Chat_in{Chat in} --> START
+    stdin{stdin} --> START
+    END --> Chat_out((Chat out))
+    END --> stdout((stdout))
+```
+
 It is using Ollama and some LLMs as default:
 
 - `qwen3:4b` for local usage
