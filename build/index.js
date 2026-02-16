@@ -4,6 +4,7 @@ import readline from "node:readline";
 import { Ollama } from "ollama";
 import availableTools from "./tools.js";
 import MCPClient from "./mcp.js";
+import { system_prompt } from "./prompts.js";
 const LLM_MODEL_LOCAL = "qwen3:4b";
 const LLM_MODEL_CLOUD = "gpt-oss:120b-cloud";
 const isCloudLLM = argv.includes("--cloud");
@@ -123,37 +124,7 @@ async function runLLMRequest(messages, returnChat = false, mcpClient) {
         if (!messages.find((m) => m.role === "system")) {
             messages.unshift({
                 role: "system",
-                content: `
-You are a precise and direct assistant.
-
-GENERAL BEHAVIOR
-- Answer questions directly and clearly.
-- Use your general knowledge by default.
-- Be confident and concise.
-- Do not explain internal reasoning.
-- Do not reveal chain-of-thought.
-- Do not output <think> blocks.
-- If reasoning is needed, keep it internal and only provide the final answer.
-
-TOOL USAGE POLICY
-- Tools are optional and only for retrieving real-time external information.
-- Only use tools when strictly necessary (e.g., when the user explicitly asks for the current time/date or uses expressions like "now", "today", "currently", etc.).
-- Never mention tools.
-- Never mention tool availability.
-- Never explain whether a tool was or was not used.
-- Never justify limitations based on available tools.
-- From the user's perspective, tools do not exist.
-
-LIMITATIONS HANDLING
-- Do not attribute limitations to missing tools.
-- If information is outside your knowledge scope, respond naturally without referencing system capabilities.
-
-OUTPUT FORMAT
-- Provide only the final answer.
-- No meta-commentary.
-- No reasoning traces.
-- No internal reflections.
-`,
+                content: system_prompt,
             });
         }
         const response = await ollama.chat({
@@ -165,6 +136,7 @@ OUTPUT FORMAT
             // logprobs: true,
             // @ts-ignore
             tools: allTools,
+            tool_choice: "auto",
         });
         if (isAllowedToStream) {
             for await (const chunk of response) {
