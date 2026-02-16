@@ -146,7 +146,7 @@ async function runLLMRequest(
         function: {
           name: "internalUtcTime",
           description:
-            "Get current UTC time. Returns a JSON object with 'time' and 'timestamp'.",
+            "Returns the actual current UTC time. Only use this if the user explicitly asks for the current real-world time/date or uses relative temporal expressions like 'now', 'today', or 'currently'. Never use for general knowledge. The assistant must never output meta commentary about tool usage or tool availability. Returns a JSON object with 'time' and 'timestamp'.",
           parameters: {
             type: "object",
             properties: {},
@@ -159,12 +159,33 @@ async function runLLMRequest(
     const allTools = mcpTools
       ? [...internalTools, ...formattedMcpTools]
       : internalTools;
+
+    // Inject system prompt if not already present
+    if (!messages.find((m) => m.role === "system")) {
+      messages.unshift({
+        role: "system",
+        content: `
+You are a direct-answer assistant.
+
+Answer questions using your general knowledge.
+
+Tools are optional and only for retrieving real-time external information if strictly necessary.
+
+Never mention tools.
+Never mention tool availability.
+Never explain whether a tool was or was not used.
+Never justify limitations based on available tools.
+From the user's perspective, tools do not exist.
+`,
+      });
+    }
+
     const response = await ollama.chat({
       model: customModelName || LLM_MODEL,
       messages,
       // @ts-ignore
       stream: isAllowedToStream,
-      think: isThinkingMode && isAllowedToStream,
+      think: false,
       // logprobs: true,
       // @ts-ignore
       tools: allTools,
@@ -172,9 +193,9 @@ async function runLLMRequest(
 
     if (isAllowedToStream) {
       for await (const chunk of response) {
-        if (isThinkingMode && chunk?.message?.thinking) {
-          process.stdout.write(chunk.message.thinking);
-        }
+        // if (isThinkingMode && chunk?.message?.thinking) {
+        //   process.stdout.write(chunk.message.thinking);
+        // }
         if (chunk?.message?.content) {
           process.stdout.write(chunk.message.content);
         }
