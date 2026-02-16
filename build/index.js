@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { argv } from "node:process";
 import readline from "node:readline";
+import * as fs from "fs";
+import path from "node:path";
 import { Ollama } from "ollama";
 import availableTools from "./tools.js";
 import MCPClient from "./mcp.js";
@@ -23,9 +25,28 @@ if (hasLLMSpecified) {
         }
     });
 }
+function loadSystemPrompt() {
+    // Try to find SYSTEM_PROMPT.md first in the current working directory
+    const filePath = path.join(process.cwd(), "SYSTEM_PROMPT.md");
+    if (fs.existsSync(filePath)) {
+        try {
+            const fileContent = fs.readFileSync(filePath, "utf-8");
+            console.error(`✓ Using SYSTEM_PROMPT.md from ${process.cwd()}`);
+            return fileContent;
+        }
+        catch (error) {
+            console.error(`✗ Error reading SYSTEM_PROMPT.md:`, error);
+            console.error(`Using default system prompt`);
+            return system_prompt;
+        }
+    }
+    // Fall back to default system prompt
+    return system_prompt;
+}
 async function main() {
     let input = "";
     const mcpClient = useMcp ? await initializeMcpClient() : null;
+    const systemPrompt = loadSystemPrompt();
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
         input += chunk;
@@ -34,7 +55,7 @@ async function main() {
         if (isChatMode) {
             try {
                 const inputMessages = JSON.parse(input.trim() || "[]");
-                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient);
+                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient, systemPrompt);
                 process.stdout.write(content);
                 process.exit(0);
             }
@@ -44,7 +65,7 @@ async function main() {
             }
         }
         else {
-            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient);
+            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient, systemPrompt);
             process.stdout.write(content);
             process.exit(0);
         }
@@ -61,7 +82,7 @@ async function main() {
                 process.exit(0);
             }
             const content = await runLLMRequest([{ role: "user", content: prompt }], false, // chat mode not supported with user input interface
-            mcpClient);
+            mcpClient, systemPrompt);
             process.stdout.write(content);
             process.exit(0);
         });
@@ -71,7 +92,7 @@ main().catch((error) => {
     console.error("Fatal error in main():", error);
     process.exit(1);
 });
-async function runLLMRequest(messages, returnChat = false, mcpClient) {
+async function runLLMRequest(messages, returnChat = false, mcpClient, systemPrompt) {
     const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
     try {
         const ollama = new Ollama({
@@ -124,7 +145,7 @@ async function runLLMRequest(messages, returnChat = false, mcpClient) {
         if (!messages.find((m) => m.role === "system")) {
             messages.unshift({
                 role: "system",
-                content: system_prompt,
+                content: systemPrompt,
             });
         }
         const response = await ollama.chat({
@@ -293,7 +314,7 @@ async function runLLMRequest(messages, returnChat = false, mcpClient) {
             if (!isChatMode && isAllowedToStream) {
                 console.log("\n================\n");
             }
-            return await runLLMRequest(messages, isChatMode, mcpClient);
+            return await runLLMRequest(messages, isChatMode, mcpClient, systemPrompt);
         }
     }
     catch (e) {

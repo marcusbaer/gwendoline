@@ -2,6 +2,8 @@
 
 import { argv } from "node:process";
 import readline from "node:readline";
+import * as fs from "fs";
+import path from "node:path";
 
 import { Ollama } from "ollama";
 import availableTools from "./tools.js";
@@ -36,10 +38,31 @@ if (hasLLMSpecified) {
   });
 }
 
+function loadSystemPrompt(): string {
+  // Try to find SYSTEM_PROMPT.md first in the current working directory
+  const filePath = path.join(process.cwd(), "SYSTEM_PROMPT.md");
+
+  if (fs.existsSync(filePath)) {
+    try {
+      const fileContent = fs.readFileSync(filePath, "utf-8");
+      console.error(`✓ Using SYSTEM_PROMPT.md from ${process.cwd()}`);
+      return fileContent;
+    } catch (error) {
+      console.error(`✗ Error reading SYSTEM_PROMPT.md:`, error);
+      console.error(`Using default system prompt`);
+      return system_prompt;
+    }
+  }
+
+  // Fall back to default system prompt
+  return system_prompt;
+}
+
 async function main() {
   let input = "";
 
   const mcpClient = useMcp ? await initializeMcpClient() : null;
+  const systemPrompt = loadSystemPrompt();
 
   process.stdin.setEncoding("utf8");
 
@@ -55,6 +78,7 @@ async function main() {
           inputMessages,
           isChatMode,
           mcpClient,
+          systemPrompt,
         );
         process.stdout.write(content);
         process.exit(0);
@@ -67,6 +91,7 @@ async function main() {
         [{ role: "user", content: input.trim() }],
         isChatMode,
         mcpClient,
+        systemPrompt,
       );
       process.stdout.write(content);
       process.exit(0);
@@ -89,6 +114,7 @@ async function main() {
         [{ role: "user", content: prompt }],
         false, // chat mode not supported with user input interface
         mcpClient,
+        systemPrompt,
       );
       process.stdout.write(content);
       process.exit(0);
@@ -105,6 +131,7 @@ async function runLLMRequest(
   messages: ChatMessage[],
   returnChat = false,
   mcpClient: any,
+  systemPrompt: string,
 ) {
   const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
 
@@ -165,7 +192,7 @@ async function runLLMRequest(
     if (!messages.find((m) => m.role === "system")) {
       messages.unshift({
         role: "system",
-        content: system_prompt,
+        content: systemPrompt,
       });
     }
 
@@ -394,7 +421,7 @@ async function runLLMRequest(
       if (!isChatMode && isAllowedToStream) {
         console.log("\n================\n");
       }
-      return await runLLMRequest(messages, isChatMode, mcpClient);
+      return await runLLMRequest(messages, isChatMode, mcpClient, systemPrompt);
     }
   } catch (e) {
     return `Error: ${e}`;
