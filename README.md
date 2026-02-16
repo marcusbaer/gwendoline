@@ -164,3 +164,7 @@ The MCP client will:
 - Register their tools and make them available to the language model
 - Handle tool calls transparently
 - Provide structured error messages when tools fail
+
+## System Prompt
+
+To override the default system prompt, create a file called `SYSTEM_PROMPT.md` in the current working directory and fill it with your custom system prompt.
