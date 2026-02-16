@@ -9,5 +9,6 @@ node_modules/
 *.md
 
 !README.md
-package.json
-package-lock.json
+!package.json
+!package-lock.json
+!tsconfig.json
