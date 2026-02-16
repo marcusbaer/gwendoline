@@ -245,8 +245,11 @@ OUTPUT FORMAT
         return toolsCallAnswer;
       }
 
-      const contentWithThinkTokensRemoved = response.message.content
-        .replace(/<think>[\s\S]*?<\/think>/g, "")
+      let contentWithThinkTokensRemoved = response.message.content
+        .replace(/<think>[\s\S]*?<\/think>/gi, "")
+        .trim();
+      contentWithThinkTokensRemoved = contentWithThinkTokensRemoved
+        .replace(/[\s\S]*?<\/think>/gi, "")
         .trim();
 
       if (returnChat) {

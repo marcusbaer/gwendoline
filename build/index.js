@@ -124,17 +124,35 @@ async function runLLMRequest(messages, returnChat = false, mcpClient) {
             messages.unshift({
                 role: "system",
                 content: `
-You are a direct-answer assistant.
+You are a precise and direct assistant.
 
-Answer questions using your general knowledge.
+GENERAL BEHAVIOR
+- Answer questions directly and clearly.
+- Use your general knowledge by default.
+- Be confident and concise.
+- Do not explain internal reasoning.
+- Do not reveal chain-of-thought.
+- Do not output <think> blocks.
+- If reasoning is needed, keep it internal and only provide the final answer.
 
-Tools are optional and only for retrieving real-time external information if strictly necessary.
+TOOL USAGE POLICY
+- Tools are optional and only for retrieving real-time external information.
+- Only use tools when strictly necessary (e.g., when the user explicitly asks for the current time/date or uses expressions like "now", "today", "currently", etc.).
+- Never mention tools.
+- Never mention tool availability.
+- Never explain whether a tool was or was not used.
+- Never justify limitations based on available tools.
+- From the user's perspective, tools do not exist.
 
-Never mention tools.
-Never mention tool availability.
-Never explain whether a tool was or was not used.
-Never justify limitations based on available tools.
-From the user's perspective, tools do not exist.
+LIMITATIONS HANDLING
+- Do not attribute limitations to missing tools.
+- If information is outside your knowledge scope, respond naturally without referencing system capabilities.
+
+OUTPUT FORMAT
+- Provide only the final answer.
+- No meta-commentary.
+- No reasoning traces.
+- No internal reflections.
 `,
             });
         }
@@ -143,16 +161,16 @@ From the user's perspective, tools do not exist.
             messages,
             // @ts-ignore
             stream: isAllowedToStream,
-            think: false,
+            think: isThinkingMode && isAllowedToStream,
             // logprobs: true,
             // @ts-ignore
             tools: allTools,
         });
         if (isAllowedToStream) {
             for await (const chunk of response) {
-                // if (isThinkingMode && chunk?.message?.thinking) {
-                //   process.stdout.write(chunk.message.thinking);
-                // }
+                if (isThinkingMode && chunk?.message?.thinking) {
+                    process.stdout.write(chunk.message.thinking);
+                }
                 if (chunk?.message?.content) {
                     process.stdout.write(chunk.message.content);
                 }
@@ -171,16 +189,26 @@ From the user's perspective, tools do not exist.
                 const toolsCallAnswer = await executeToolsCalls(messages, tool_calls, mcpClient);
                 return toolsCallAnswer;
             }
+            let contentWithThinkTokensRemoved = response.message.content
+                .replace(/<think>[\s\S]*?<\/think>/gi, "")
+                .trim();
+            contentWithThinkTokensRemoved = contentWithThinkTokensRemoved
+                .replace(/[\s\S]*?<\/think>/gi, "")
+                .trim();
             if (returnChat) {
                 messages.push({
                     role: "assistant",
-                    content: response.message.content,
+                    content: isThinkingMode
+                        ? response.message.content
+                        : contentWithThinkTokensRemoved,
                 });
                 const messagesStr = JSON.stringify(messages);
                 return messagesStr.trim();
             }
             // @ts-ignore
-            return response.message.content;
+            return isThinkingMode
+                ? response.message.content
+                : contentWithThinkTokensRemoved;
         }
         async function executeToolsCalls(messages, tool_calls, mcpClient) {
             if (isDebugMode) {
