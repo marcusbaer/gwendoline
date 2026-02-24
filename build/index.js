@@ -37,6 +37,9 @@ function loadAgent(agentFileName) {
         try {
             const fileContent = fs.readFileSync(filePath, "utf-8");
             console.error(`✓ Using agent file ${agentFileName} from ${process.cwd()}`);
+            if (!hasLLMSpecified) {
+                customModelName = "qwen3:4b";
+            }
             return fileContent;
         }
         catch (error) {
@@ -70,8 +73,9 @@ function loadSystemPrompt(asAgent = false) {
 }
 async function main() {
     let input = "";
-    const mcpClient = useMcp ? await initializeMcpClient() : null;
+    // load agent first to optionally override custom model
     const agentPrompt = loadAgent(customAgentFile);
+    const mcpClient = useMcp ? await initializeMcpClient() : null;
     const systemPrompt = loadSystemPrompt(!!agentPrompt);
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
