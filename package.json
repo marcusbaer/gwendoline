@@ -1,11 +1,12 @@
 {
   "name": "gwendoline",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "CLI based tool for interacting with language models directly from terminal",
   "keywords": [
     "cli",
     "llm",
     "ollama",
+    "agent",
     "chat",
     "mcp"
   ],
