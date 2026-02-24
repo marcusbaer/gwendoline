@@ -6,26 +6,48 @@ import path from "node:path";
 import { Ollama } from "ollama";
 import availableTools from "./tools.js";
 import MCPClient from "./mcp.js";
-import { system_prompt } from "./prompts.js";
+import { agent_system_prompt, system_prompt } from "./prompts.js";
 const LLM_MODEL_LOCAL = "qwen3:4b";
 const LLM_MODEL_CLOUD = "gpt-oss:120b-cloud";
 const isCloudLLM = argv.includes("--cloud");
+const hasAgentSpecified = argv.includes("--agent");
 const hasLLMSpecified = argv.includes("--model");
 const useMcp = argv.includes("--mcp");
 const isChatMode = argv.includes("--chat");
 const isStreamMode = argv.includes("--stream");
 const isThinkingMode = argv.includes("--thinking");
 const isDebugMode = argv.includes("--debug");
+let customAgentFile = "";
 let customModelName = "";
-if (hasLLMSpecified) {
+if (hasAgentSpecified || hasLLMSpecified) {
     argv.forEach((val, index) => {
+        if (val === "--agent") {
+            customAgentFile = argv[index + 1];
+        }
         if (val === "--model") {
             customModelName = argv[index + 1];
-            console.log(`Using model ${customModelName}`);
+            console.error(`Using model ${customModelName}`);
         }
     });
 }
-function loadSystemPrompt() {
+function loadAgent(agentFileName) {
+    // Try to find AGENT.md in the current working directory, if nothing else specified
+    const filePath = path.join(process.cwd(), agentFileName || "AGENT.md");
+    if (fs.existsSync(filePath)) {
+        try {
+            const fileContent = fs.readFileSync(filePath, "utf-8");
+            console.error(`✓ Using agent file ${agentFileName} from ${process.cwd()}`);
+            return fileContent;
+        }
+        catch (error) {
+            console.error(`✗ Error reading agent file:`, error);
+            return "";
+        }
+    }
+    // Fall back to default
+    return "";
+}
+function loadSystemPrompt(asAgent = false) {
     // Try to find SYSTEM_PROMPT.md first in the current working directory
     const filePath = path.join(process.cwd(), "SYSTEM_PROMPT.md");
     if (fs.existsSync(filePath)) {
@@ -40,13 +62,17 @@ function loadSystemPrompt() {
             return system_prompt;
         }
     }
+    if (asAgent) {
+        return agent_system_prompt;
+    }
     // Fall back to default system prompt
     return system_prompt;
 }
 async function main() {
     let input = "";
     const mcpClient = useMcp ? await initializeMcpClient() : null;
-    const systemPrompt = loadSystemPrompt();
+    const agentPrompt = loadAgent(customAgentFile);
+    const systemPrompt = loadSystemPrompt(!!agentPrompt);
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
         input += chunk;
@@ -55,7 +81,7 @@ async function main() {
         if (isChatMode) {
             try {
                 const inputMessages = JSON.parse(input.trim() || "[]");
-                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient, systemPrompt);
+                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient, systemPrompt, agentPrompt);
                 process.stdout.write(content);
                 process.exit(0);
             }
@@ -65,7 +91,7 @@ async function main() {
             }
         }
         else {
-            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient, systemPrompt);
+            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient, systemPrompt, agentPrompt);
             process.stdout.write(content);
             process.exit(0);
         }
@@ -82,7 +108,7 @@ async function main() {
                 process.exit(0);
             }
             const content = await runLLMRequest([{ role: "user", content: prompt }], false, // chat mode not supported with user input interface
-            mcpClient, systemPrompt);
+            mcpClient, systemPrompt, agentPrompt);
             process.stdout.write(content);
             process.exit(0);
         });
@@ -92,7 +118,7 @@ main().catch((error) => {
     console.error("Fatal error in main():", error);
     process.exit(1);
 });
-async function runLLMRequest(messages, returnChat = false, mcpClient, systemPrompt) {
+async function runLLMRequest(messages, returnChat = false, mcpClient, systemPrompt, agentPrompt) {
     const LLM_MODEL = isCloudLLM ? LLM_MODEL_CLOUD : LLM_MODEL_LOCAL;
     try {
         const ollama = new Ollama({
@@ -143,10 +169,18 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, systemProm
             : internalTools;
         // Inject system prompt if not already present
         if (!messages.find((m) => m.role === "system")) {
-            messages.unshift({
-                role: "system",
-                content: systemPrompt,
-            });
+            if (systemPrompt) {
+                messages.unshift({
+                    role: "system",
+                    content: systemPrompt,
+                });
+            }
+            if (agentPrompt) {
+                messages.unshift({
+                    role: "system",
+                    content: agentPrompt,
+                });
+            }
         }
         const response = await ollama.chat({
             model: customModelName || LLM_MODEL,
@@ -312,9 +346,9 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, systemProm
             }
             // run LLM again for final answer, based on tools output
             if (!isChatMode && isAllowedToStream) {
-                console.log("\n================\n");
+                console.error("\n================\n");
             }
-            return await runLLMRequest(messages, isChatMode, mcpClient, systemPrompt);
+            return await runLLMRequest(messages, isChatMode, mcpClient, systemPrompt, agentPrompt);
         }
     }
     catch (e) {
