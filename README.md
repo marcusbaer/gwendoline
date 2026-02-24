@@ -65,14 +65,22 @@ cat prompt.md | gwen --model gpt-oss:120b-cloud > output.md
 cat prompt.md | gwen --stream
 cat prompt.md | gwen --thinking
 cat prompt.md | gwen --stream --thinking
+
 cat input.json | gwen --chat > output.json
 cat input.json | gwen --chat --mcp > output.json
+
 gwen --debug
+
+cat <<EOF | gwen --agent ./agents/hello.agent.md --model gpt-oss:120b-cloud > output.md
+Greet and Analyze:
+
+$(cat context_file.txt)
+EOF
 ```
 
 ## Command Line Parameters
 
-Gwendoline supports the following command line parameters to customize its behavior:
+Gwendoline supports the following command line parameters to customize its behavior. Parameters can be used in combination.
 
 ### Agent
 
