@@ -127,7 +127,6 @@ async function main() {
     let input = "";
     // load agent first to optionally override custom model
     const agentConfig = loadAgent(customAgentFile);
-    console.error(agentConfig.metadata);
     const mcpClient = useMcp ? await initializeMcpClient() : null;
     const systemPrompt = loadSystemPrompt(!!agentConfig.body);
     process.stdin.setEncoding("utf8");

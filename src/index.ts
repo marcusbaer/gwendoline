@@ -162,9 +162,6 @@ async function main() {
 
   // load agent first to optionally override custom model
   const agentConfig = loadAgent(customAgentFile);
-
-  console.error(agentConfig.metadata);
-
   const mcpClient = useMcp ? await initializeMcpClient() : null;
   const systemPrompt = loadSystemPrompt(!!agentConfig.body);
 
