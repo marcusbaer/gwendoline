@@ -30,6 +30,58 @@ if (hasAgentSpecified || hasLLMSpecified) {
         }
     });
 }
+function parseAgentYaml(fileContent) {
+    // Extract YAML front matter between --- delimiters
+    const yamlMatch = fileContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/m);
+    if (!yamlMatch) {
+        // No valid YAML front matter found
+        return { metadata: {}, body: fileContent };
+    }
+    const yamlContent = yamlMatch[1];
+    const body = yamlMatch[2] || "";
+    const metadata = {};
+    // Simple YAML parser: extract key: value pairs
+    const lines = yamlContent.split("\n");
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#"))
+            continue;
+        // Match key: value patterns
+        const match = trimmed.match(/^([a-zA-Z-_]+):\s*(.*)$/);
+        if (match) {
+            const [, key, value] = match;
+            let parsedValue = value.trim();
+            // Try to parse value
+            // Handle quoted strings
+            if ((parsedValue.startsWith("'") && parsedValue.endsWith("'")) ||
+                (parsedValue.startsWith('"') && parsedValue.endsWith('"'))) {
+                parsedValue = parsedValue.slice(1, -1);
+            }
+            // Handle arrays like ['item1', 'item2']
+            else if (parsedValue.startsWith("[") && parsedValue.endsWith("]")) {
+                try {
+                    parsedValue = JSON.parse(parsedValue.replace(/'/g, '"'));
+                }
+                catch {
+                    // Keep as string if parsing fails
+                }
+            }
+            // Handle booleans
+            else if (parsedValue === "true") {
+                parsedValue = true;
+            }
+            else if (parsedValue === "false") {
+                parsedValue = false;
+            }
+            // Handle numbers
+            else if (/^\d+$/.test(parsedValue)) {
+                parsedValue = parseInt(parsedValue, 10);
+            }
+            metadata[key] = parsedValue;
+        }
+    }
+    return { metadata, body };
+}
 function loadAgent(agentFileName) {
     // Try to find AGENT.md in the current working directory, if nothing else specified
     const filePath = path.join(process.cwd(), agentFileName || "AGENT.md");
@@ -40,15 +92,15 @@ function loadAgent(agentFileName) {
             if (!hasLLMSpecified) {
                 customModelName = "qwen3:4b";
             }
-            return fileContent;
+            return parseAgentYaml(fileContent);
         }
         catch (error) {
             console.error(`✗ Error reading agent file:`, error);
-            return "";
+            return { metadata: {}, body: "" };
         }
     }
     // Fall back to default
-    return "";
+    return { metadata: {}, body: "" };
 }
 function loadSystemPrompt(asAgent = false) {
     // Try to find SYSTEM_PROMPT.md first in the current working directory
@@ -74,9 +126,10 @@ function loadSystemPrompt(asAgent = false) {
 async function main() {
     let input = "";
     // load agent first to optionally override custom model
-    const agentPrompt = loadAgent(customAgentFile);
+    const agentConfig = loadAgent(customAgentFile);
+    console.error(agentConfig.metadata);
     const mcpClient = useMcp ? await initializeMcpClient() : null;
-    const systemPrompt = loadSystemPrompt(!!agentPrompt);
+    const systemPrompt = loadSystemPrompt(!!agentConfig.body);
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
         input += chunk;
@@ -85,7 +138,7 @@ async function main() {
         if (isChatMode) {
             try {
                 const inputMessages = JSON.parse(input.trim() || "[]");
-                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient, systemPrompt, agentPrompt);
+                const content = await runLLMRequest(inputMessages, isChatMode, mcpClient, systemPrompt, agentConfig.body);
                 process.stdout.write(content);
                 process.exit(0);
             }
@@ -95,7 +148,7 @@ async function main() {
             }
         }
         else {
-            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient, systemPrompt, agentPrompt);
+            const content = await runLLMRequest([{ role: "user", content: input.trim() }], isChatMode, mcpClient, systemPrompt, agentConfig.body);
             process.stdout.write(content);
             process.exit(0);
         }
@@ -112,7 +165,7 @@ async function main() {
                 process.exit(0);
             }
             const content = await runLLMRequest([{ role: "user", content: prompt }], false, // chat mode not supported with user input interface
-            mcpClient, systemPrompt, agentPrompt);
+            mcpClient, systemPrompt, agentConfig.body);
             process.stdout.write(content);
             process.exit(0);
         });
@@ -182,7 +235,7 @@ async function runLLMRequest(messages, returnChat = false, mcpClient, systemProm
             if (agentPrompt) {
                 messages.unshift({
                     role: "system",
-                    content: agentPrompt,
+                    content: agentPrompt || "",
                 });
             }
         }

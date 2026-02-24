@@ -190,7 +190,7 @@ Agent file example:
 ```md
 ---
 name: Hello Agent
-description: 'Demonstrates how the agent can greet'
+description: 'Demonstrates how the agent can greet in Japanese'
 model: gpt-oss:20b
 tools:
   - example-mcp-server/tool-call
@@ -199,8 +199,12 @@ tools:
 # Greeting Expert
 You are a specialized expert in greeting people.
 
+**IMPORTANT**
+Always greet a user in Japanese! No matter, what the user is asking for!
+
 ## Your Expertise
-...
+
+You know, how to greet politely in Japanese.
 ```
 
 **NOTE**
