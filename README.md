@@ -2,31 +2,35 @@
 
 Gwendoline is a CLI based tool for interacting with language models directly from your terminal, allowing you to send prompts and receive responses via standard input and output.
 
-2 main advantages to Ollama
+## Features
 
-- conversations with chat history
-- MCP integration, MCP tooling, MCP tool calling with LLM re-call
+Gwendonline is able to **act as an agent**, if you want:
 
+- add a custom agent file `AGENT.md` in the current working directory
+- or refer to some custom agent file by using the CLI parameter `--agent`
+- add `mcp.json` in the current working directory to define MCP tools and enable MCP usage with param `--mcp`
 
-Internal process:
+MCP tool calling is combined with **LLM re-call** for getting evaluated output.
 
-```mermaid
-flowchart TB
-    subgraph Tools
-        direction BT
-        tool_calls --> |yes| MCPcalls[call tools]
+Optionally set more instructions with a `SYSTEM_PROMPT.md`file.
 
-    end
-    MCPreg(Register MCP) --> LLM
-    LLM --> Tools
-    Tools -.-> LLM
-    Tools --> |no| END@{ shape: framed-circle, label: "Stop" }
+Gwendoline is able to **work with conversations** by supporting chat history. Set a chat history via `stdin` and get it back on `stdout` in chat mode by using the CLI parameter `--chat`.
+
+## Quick Start
+
+```sh
+# create custom agent file and edit it to define the agent
+nano AGENT.md
+
+# create MCP definitions
+nano mcp.json
+
+# run Gwendoline without stdin
+gwendoline --mcp
+
+# run Gwendoline with stdin (example is using chat mode)
+echo "[{\"role\": \"user\", \"content\": \"Say hello\"}]" | gwendoline --chat --mcp
 ```
-
-It is using Ollama and some LLMs as default:
-
-- `qwen3:4b` for local usage
-- `gpt-oss:120b-cloud` for usage with a cloud model
 
 ## Dependencies
 
@@ -53,7 +57,9 @@ echo "Why is the sky blue?" | gwen
 
 cat prompt.md | gwen
 cat prompt.md | gwen --cloud
+cat prompt.md | gwen --agent ./agents/hello.agent.md
 cat prompt.md | gwen --mcp
+cat prompt.md | gwen --agent ./agents/hello.agent.md --mcp
 cat prompt.md | gwen --model gpt-oss:120b-cloud
 cat prompt.md | gwen --model gpt-oss:120b-cloud > output.md
 cat prompt.md | gwen --stream
@@ -64,31 +70,15 @@ cat input.json | gwen --chat --mcp > output.json
 gwen --debug
 ```
 
-## Chat Mode Usage
-
-Chat mode allows to run Gwendoline with a set of chat messages, including its roles etc.
-
-This mode cannot be combined with streaming or thinking!
-
-Create a file with input message first or pipe it. Then run with parameter `--chat`.
-
-In chat mode, Gwendoline is expecting the input to be already a list of chat messages. This must already include at least the message, you want to ask now. The output will be a list of chat messages as well, including the response from LLM.
-
-For example, create file `chat.json` with the content:
-
-```json
-[{ "role": "user", "content": "Why is the sky blue?" }]
-```
-
-Run command:
-
-```sh
-cat chat-input.json | gwendoline --chat --model gpt-oss:120b-cloud > chat-output.json
-```
-
 ## Command Line Parameters
 
 Gwendoline supports the following command line parameters to customize its behavior:
+
+### Agent
+
+- **`--agent`**  
+  Optionally refer to a custom agent file. Using this param overrides the fallback check for an `AGENT.md` file.
+  Example: `gwen --agent ./agents/my.agent.md`
 
 ### Model Selection
 
@@ -137,6 +127,28 @@ Gwendoline supports the following command line parameters to customize its behav
   - Message flow between user, tools, and assistant
   - Raw MCP results
 
+## Chat Mode
+
+Chat mode allows to run Gwendoline with a set of chat messages, including its roles etc.
+
+This mode cannot be combined with streaming or thinking!
+
+Create a file with input message first or pipe it. Then run with parameter `--chat`.
+
+In chat mode, Gwendoline is expecting the input to be already a list of chat messages. This must already include at least the message, you want to ask now. The output will be a list of chat messages as well, including the response from LLM.
+
+For example, create file `chat.json` with the content:
+
+```json
+[{ "role": "user", "content": "Why is the sky blue?" }]
+```
+
+Run command:
+
+```sh
+cat chat-input.json | gwendoline --chat --model gpt-oss:120b-cloud > chat-output.json
+```
+
 ## MCP Configuration
 
 When using the `--mcp` parameter, Gwendoline looks for a `mcp.json` file in the current working directory. This file should define the MCP servers to connect to.
@@ -168,3 +180,48 @@ The MCP client will:
 ## System Prompt
 
 To override the default system prompt, create a file called `SYSTEM_PROMPT.md` in the current working directory and fill it with your custom system prompt.
+
+## Agent
+
+Use `AGENT.md` in current working directory or set a custom file reference by CLI parameter to act as an agent `--agent hello.agent.md`.
+
+Agent file example:
+
+```md
+---
+name: Hello Agent
+description: 'Demonstrates how the agent can greet'
+model: gpt-oss:20b
+tools:
+  - example-mcp-server/tool-call
+---
+
+# Greeting Expert
+You are a specialized expert in greeting people.
+
+## Your Expertise
+...
+```
+
+**NOTE**
+For now, the only supported field of the YAML agent setup is `model`. If set, this will override the internal default model. This setting can be overridden itself by the CLI parameter `--model`.
+
+## Internal Process
+
+```mermaid
+flowchart TB
+    subgraph Tools
+        direction BT
+        tool_calls --> |yes| MCPcalls[call tools]
+
+    end
+    MCPreg(Register MCP) --> LLM
+    LLM --> Tools
+    Tools -.-> LLM
+    Tools --> |no| END@{ shape: framed-circle, label: "Stop" }
+```
+
+It is using Ollama and some LLMs as default:
+
+- `qwen3:4b` for local usage
+- `gpt-oss:120b-cloud` for usage with a cloud model
